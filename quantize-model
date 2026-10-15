@@ -10,13 +10,13 @@ from pathlib import Path
 import torch
 from transformers import AutoConfig
 
-from lib.utils.tq_quantizer import TQModelWrapper
+from lib.utils.cq_quantizer import CQModelWrapper
 
 
 def default_output_dir(model_name: str) -> Path:
-    root = Path(os.environ.get("TQ_OUTPUT_ROOT", "/mnt/d/quantized_models"))
-    # return root / f"tq_{model_name.replace('/', '_')}"
-    return root / f"{model_name.rstrip('/').split('/')[-1]}-TQ-4bit"
+    root = Path(os.environ.get("CQ_OUTPUT_ROOT", "/mnt/d/quantized_models"))
+    # return root / f"cq_{model_name.replace('/', '_')}"
+    return root / f"{model_name.rstrip('/').split('/')[-1]}-CQ-4bit"
 
 
 class StreamingConfigShell(torch.nn.Module):
@@ -28,9 +28,9 @@ class StreamingConfigShell(torch.nn.Module):
 
 
 def quantize_model(model_name: str, output_dir: Path, device: str, verbose: bool) -> None:
-    print(f"[TQ] model:  {model_name}")
-    print(f"[TQ] output: {output_dir}")
-    print(f"[TQ] device: {device}")
+    print(f"[CQ] model:  {model_name}")
+    print(f"[CQ] output: {output_dir}")
+    print(f"[CQ] device: {device}")
 
     cfg = AutoConfig.from_pretrained(
         model_name,
@@ -39,11 +39,11 @@ def quantize_model(model_name: str, output_dir: Path, device: str, verbose: bool
     )
 
     architectures = getattr(cfg, "architectures", None) or []
-    print(f"[TQ] architecture: {architectures[0] if architectures else 'Unknown'}")
+    print(f"[CQ] architecture: {architectures[0] if architectures else 'Unknown'}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     model = StreamingConfigShell(cfg)
-    wrapper = TQModelWrapper(model)
+    wrapper = CQModelWrapper(model)
 
     started = time.time()
     stats, _ = wrapper.quantize_model_layer_by_layer(
@@ -57,29 +57,29 @@ def quantize_model(model_name: str, output_dir: Path, device: str, verbose: bool
     )
     elapsed = time.time() - started
 
-    print(f"[TQ] quantization completed in {elapsed:.1f}s")
-    print("[TQ] stats:")
+    print(f"[CQ] quantization completed in {elapsed:.1f}s")
+    print("[CQ] stats:")
     print(json.dumps(stats, indent=2, default=str))
     print()
-    print("[TQ] next step:")
+    print("[CQ] next step:")
     print(
-        "  python build_convert_upload_tq_model_incremental_qwen4exp.py "
+        "  python build_convert_upload_cq_model_incremental_qwen4exp.py "
         f"--model {model_name} --no-upload"
     )
-    print("[TQ] omit --no-upload when you want to publish to Hugging Face.")
+    print("[CQ] omit --no-upload when you want to publish to Hugging Face.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="quantize-model",
-        description="Stream a Hugging Face model through the TQ layer-by-layer quantizer.",
+        description="Stream a Hugging Face model through the CQ layer-by-layer quantizer.",
     )
     parser.add_argument("model", help="Hugging Face model ID or local model directory")
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help="Output directory (default: $TQ_OUTPUT_ROOT/tq_<model>)",
+        help="Output directory (default: $CQ_OUTPUT_ROOT/cq_<model>)",
     )
     parser.add_argument("--device", default="cuda", help="Quantization device (default: cuda)")
     parser.add_argument("--quiet", action="store_true", help="Reduce per-target logging")

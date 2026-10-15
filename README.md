@@ -1,8 +1,10 @@
-# TQ Quant Factory
+# CQ Quant Factory
+
+**CQ stands for Coded Quantization.**
 
 **Calibration-free, information-theoretic 4-bit quantization for Large Language Models.**
 
-TQ Quant Factory transforms pretrained Hugging Face models into **TQ 4-bit models** that can be deployed with vLLM.
+CQ Quant Factory transforms pretrained Hugging Face models into **CQ 4-bit models** that can be deployed with vLLM.
 
 **No calibration dataset. No calibration forward passes.**
 
@@ -13,7 +15,7 @@ Hugging Face Model
    Quant Factory
         │
         ▼
-   TQ 4-bit Model
+   CQ 4-bit Model
         │
         ▼
        vLLM
@@ -26,7 +28,7 @@ Hugging Face Model
 ## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/textclf-api/quant-factory.git
+git clone https://github.com/thousandml-api/quant-factory.git
 cd quant-factory
 ```
 
@@ -34,7 +36,7 @@ cd quant-factory
 
 ## 2. Quantize a Model
 
-From the TQ quantizer directory, run:
+From the CQ quantizer directory, run:
 
 ```bash
 ./quantize-model meta-llama/Llama-3.1-8B-Instruct
@@ -46,7 +48,7 @@ That's it.
 
 **No calibration forward passes are required.**
 
-TQ reads the model weights directly, processes supported targets incrementally, and persists the quantized results as it runs.
+CQ reads the model weights directly, processes supported targets incrementally, and persists the quantized results as it runs.
 
 ### Custom Output Directory
 
@@ -58,32 +60,32 @@ TQ reads the model weights directly, processes supported targets incrementally, 
 Or configure a default output root:
 
 ```bash
-export TQ_OUTPUT_ROOT=/path/to/quantized_models
+export CQ_OUTPUT_ROOT=/path/to/quantized_models
 ```
 
 The quantization pipeline is incremental, so completed records are persisted as the model is processed.
 
 ---
 
-## 3. Build the Final TQ Model
+## 3. Build the Final CQ Model
 
 After quantization finishes:
 
 ```bash
-python build_convert_upload_tq_model_incremental_qwen4exp.py \
+python build_convert_upload_cq_model_incremental_qwen4exp.py \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-TQ-4bit \
+  --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-CQ-4bit \
   --no-upload
 ```
 
-This converts the incremental quantization records into the final TQ model layout expected by the runtime.
+This converts the incremental quantization records into the final CQ model layout expected by the runtime.
 
 For example:
 
 ```bash
-python build_convert_upload_tq_model_incremental_qwen4exp.py \
+python build_convert_upload_cq_model_incremental_qwen4exp.py \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --repo-id my-user/Llama-3.1-8B-Instruct-TQ-4bit \
+  --repo-id my-user/Llama-3.1-8B-Instruct-CQ-4bit \
   --no-upload
 ```
 
@@ -94,18 +96,18 @@ python build_convert_upload_tq_model_incremental_qwen4exp.py \
 To build and publish the finished model to Hugging Face, omit `--no-upload`:
 
 ```bash
-python build_convert_upload_tq_model_incremental_qwen4exp.py \
+python build_convert_upload_cq_model_incremental_qwen4exp.py \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-TQ-4bit
+  --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-CQ-4bit
 ```
 
 You must be authenticated with Hugging Face and have permission to create or update the specified repository.
 
 ---
 
-## 5. Install TQ Inference Support
+## 5. Install CQ Inference Support
 
-TQ models can be served through the TextCLF TQ integration for vLLM.
+CQ models can be served through the ThousandML CQ integration for vLLM.
 
 From the repository:
 
@@ -119,18 +121,18 @@ pip install .
 ## 6. Serve the Model with vLLM
 
 ```bash
-vllm serve YOUR_USERNAME/Llama-3.1-8B-Instruct-TQ-4bit \
-  --quantization tq
+vllm serve YOUR_USERNAME/Llama-3.1-8B-Instruct-CQ-4bit \
+  --quantization cq
 ```
 
 For example:
 
 ```bash
-vllm serve textclf/Llama-3.1-8B-Instruct-TQ-4bit \
-  --quantization tq
+vllm serve thousandml/Llama-3.1-8B-Instruct-CQ-4bit \
+  --quantization cq
 ```
 
-vLLM loads the TQ metadata and packed weights and dispatches supported operations through the TQ native runtime.
+vLLM loads the CQ metadata and packed weights and dispatches supported operations through the CQ native runtime.
 
 ---
 
@@ -146,13 +148,13 @@ Pretrained Hugging Face Model
             │  No calibration data
             │  No calibration passes
             ▼
-   Incremental TQ Records
+   Incremental CQ Records
             │
             ▼
        Build / Convert
             │
             ▼
-       TQ 4-bit Model
+       CQ 4-bit Model
             │
        ┌────┴────┐
        │         │
@@ -160,7 +162,7 @@ Pretrained Hugging Face Model
  Hugging Face   vLLM
                   │
                   ▼
-           TQ Native Runtime
+           CQ Native Runtime
 ```
 
 In short:
@@ -170,27 +172,27 @@ In short:
 ./quantize-model meta-llama/Llama-3.1-8B-Instruct
 
 # 2. Build
-python build_convert_upload_tq_model_incremental_qwen4exp.py \
+python build_convert_upload_cq_model_incremental_qwen4exp.py \
   --model meta-llama/Llama-3.1-8B-Instruct \
-  --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-TQ-4bit \
+  --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-CQ-4bit \
   --no-upload
 
-# 3. Install TQ support
+# 3. Install CQ support
 cd inference
 pip install .
 
 # 4. Serve
-vllm serve YOUR_USERNAME/Llama-3.1-8B-Instruct-TQ-4bit \
-  --quantization tq
+vllm serve YOUR_USERNAME/Llama-3.1-8B-Instruct-CQ-4bit \
+  --quantization cq
 ```
 
 ---
 
-# What is TQ?
+# What is CQ?
 
-**TQ** is TextCLF's proprietary 4-bit LLM quantization and inference technology.
+**CQ (Coded Quantization)** is ThousandML's proprietary 4-bit LLM quantization and inference technology.
 
-Unlike many post-training quantization workflows, TQ requires:
+Unlike many post-training quantization workflows, CQ requires:
 
 ```text
 Calibration datasets       0
@@ -198,21 +200,21 @@ Calibration samples        0
 Calibration forward passes 0
 ```
 
-TQ operates directly from the model weights.
+CQ operates directly from the model weights.
 
 ```text
 Model Weights
      │
      ▼
-     TQ
+     CQ
      │
      ▼
-TQ 4-bit Model
+CQ 4-bit Model
 ```
 
 This makes quantization easier to automate and removes the need to choose a dataset intended to represent future inference workloads.
 
-TQ approaches quantization from an **information-theoretic, lossy source-coding perspective**, using a proprietary coding-theoretic quantization core designed around the fundamental relationship between **rate and distortion**.
+CQ approaches quantization from an **information-theoretic, lossy source-coding perspective**, using a proprietary coding-theoretic quantization core designed around the fundamental relationship between **rate and distortion**.
 
 ---
 
@@ -222,13 +224,13 @@ The benchmark below is specifically for **Qwen3.8 27B**.
 
 It should not be interpreted as a claim that the same fidelity characteristics or relative performance apply to every model architecture or model size.
 
-For this evaluation, we compare the **Qwen3.8 27B TQ 4-bit model** against **Unsloth UD-Q4_K_XL** at a nearly identical model footprint.
+For this evaluation, we compare the **Qwen3.8 27B CQ 4-bit model** against **Unsloth UD-Q4_K_XL** at a nearly identical model footprint.
 
 Both quantized models are evaluated against the unquantized Qwen3.8 27B reference model by comparing output probability distributions and top-token predictions.
 
 | Qwen3.8 27B Quantization | Model Size\* |  Mean KLD ↓ | Top-1 Agreement ↑ |
 | ------------------------ | -----------: | ----------: | ----------------: |
-| **TQ 4-bit**             | **17.76 GB** | **0.02824** |       **92.419%** |
+| **CQ 4-bit**             | **17.76 GB** | **0.02824** |       **92.419%** |
 | Unsloth UD-Q4_K_XL       |     17.59 GB |     0.00772 |           95.779% |
 
 \* Model size excluding MTP weights.
@@ -251,27 +253,27 @@ On **Qwen3.8 27B**, the results show the tradeoff clearly.
 
 At a nearly identical model size, **Unsloth UD-Q4_K_XL preserves the behavior of the unquantized Qwen3.8 27B reference more closely in this evaluation**.
 
-Compared with Unsloth UD-Q4_K_XL, the TQ version shows:
+Compared with Unsloth UD-Q4_K_XL, the CQ version shows:
 
 - higher mean KLD (`0.02824` vs. `0.00772`);
 - approximately **3.36 percentage points lower Top-1 Agreement** (`92.419%` vs. `95.779%`); and
 - a nearly identical model footprint (`17.76 GB` vs. `17.59 GB`).
 
-TQ, however, is designed around an additional constraint:
+CQ, however, is designed around an additional constraint:
 
 > **Zero calibration data and zero calibration forward passes.**
 
-TQ quantizes Qwen3.8 27B directly from the model weights.
+CQ quantizes Qwen3.8 27B directly from the model weights.
 
-There is no calibration corpus to select, download, preprocess, version, or maintain as part of the TQ quantization process.
+There is no calibration corpus to select, download, preprocess, version, or maintain as part of the CQ quantization process.
 
 In this **Qwen3.8 27B evaluation**, that calibration-free constraint comes with a modest reduction in output fidelity compared with Unsloth UD-Q4_K_XL.
 
-That is the engineering tradeoff TQ is designed to explore:
+That is the engineering tradeoff CQ is designed to explore:
 
 > **Preserve strong model fidelity at 4-bit while making quantization calibration-free, reproducible, and suitable for automated model-processing infrastructure.**
 
-These results should be interpreted as a benchmark for **Qwen3.8 27B**, not as a universal ranking between TQ and Unsloth UD across all models.
+These results should be interpreted as a benchmark for **Qwen3.8 27B**, not as a universal ranking between CQ and Unsloth UD across all models.
 
 ---
 
@@ -300,13 +302,13 @@ Statistics / Optimization
 Quantization
 ```
 
-TQ reduces the workflow to:
+CQ reduces the workflow to:
 
 ```text
 Model Weights
      │
      ▼
-     TQ
+     CQ
      │
      ▼
 Quantized Model
@@ -349,13 +351,13 @@ Model B + Dataset B ──► Calibration ──► Quantization
 Model C + Dataset C ──► Calibration ──► Quantization
 ```
 
-With TQ:
+With CQ:
 
 ```text
-Model A ──► TQ ──► Quantized Model A
-Model B ──► TQ ──► Quantized Model B
-Model C ──► TQ ──► Quantized Model C
-Model D ──► TQ ──► Quantized Model D
+Model A ──► CQ ──► Quantized Model A
+Model B ──► CQ ──► Quantized Model B
+Model C ──► CQ ──► Quantized Model C
+Model D ──► CQ ──► Quantized Model D
                .
                .
                .
@@ -365,22 +367,22 @@ That makes quantization easier to treat as **infrastructure rather than a model-
 
 Quant Factory can:
 
-- quantize Hugging Face models to TQ;
+- quantize Hugging Face models to CQ;
 - quantize without calibration datasets;
 - quantize without calibration forward passes;
 - stream model weights incrementally;
 - process large models layer by layer;
 - persist results incrementally;
 - resume interrupted jobs;
-- build final TQ model artifacts;
+- build final CQ model artifacts;
 - optionally publish models to Hugging Face; and
-- serve TQ models through vLLM.
+- serve CQ models through vLLM.
 
 ---
 
 # Quantization Through Information Theory
 
-TQ approaches model quantization as a **lossy source-coding problem**.
+CQ approaches model quantization as a **lossy source-coding problem**.
 
 Any lossy compression system involves a fundamental tradeoff between two quantities:
 
@@ -396,9 +398,9 @@ R(D)
 
 where `R(D)` describes the theoretical minimum rate required to represent a source while maintaining a specified distortion level `D`.
 
-TQ's proprietary quantization core is grounded in **coding-theoretic techniques designed around these fundamental rate–distortion limits**.
+CQ's proprietary quantization core is grounded in **coding-theoretic techniques designed around these fundamental rate–distortion limits**.
 
-Rather than relying on representative activation data to determine how model weights should be represented, TQ treats the model weights themselves as the source being compressed.
+Rather than relying on representative activation data to determine how model weights should be represented, CQ treats the model weights themselves as the source being compressed.
 
 Conceptually:
 
@@ -407,7 +409,7 @@ Conceptually:
                      │
                      ▼
             ┌─────────────────┐
-            │   TQ Quantizer  │
+            │   CQ Quantizer  │
             │                 │
             │  Source Coding  │
             │  Rate ↔ Dist.   │
@@ -445,21 +447,21 @@ Quant Factory intentionally separates the **open model-processing pipeline** fro
                        │
                        ▼
               ┌───────────────────┐
-              │  Native TQ Core   │
+              │  Native CQ Core   │
               │                   │
               │    Proprietary    │
               │    Quantization   │
               └─────────┬─────────┘
                         │
                         ▼
-                  TQ 4-bit Model
+                  CQ 4-bit Model
                         │
                         ▼
                       vLLM
                         │
                         ▼
               ┌───────────────────┐
-              │ TQ Native Runtime │
+              │ CQ Native Runtime │
               │                   │
               │    Proprietary    │
               │     Inference     │
@@ -484,15 +486,15 @@ The visible code in this repository is responsible for:
 
 ---
 
-## Proprietary TQ Core
+## Proprietary CQ Core
 
-The production TQ quantization implementation is distributed as a compiled Linux extension:
+The production CQ quantization implementation is distributed as a compiled Linux extension:
 
 ```text
-_tq_core.so
+_cq_core.so
 ```
 
-The native core contains the proprietary **coding-theoretic TQ quantization algorithm** and executes tensor operations through ATen CUDA.
+The native core contains the proprietary **coding-theoretic CQ quantization algorithm** and executes tensor operations through ATen CUDA.
 
 The Python pipeline passes tensors into the native core but does not contain the proprietary quantization implementation.
 
@@ -515,7 +517,7 @@ Quant Factory uses a hybrid open/proprietary architecture.
 - Hugging Face integration
 - vLLM integration
 
-### Proprietary TQ Technology
+### Proprietary CQ Technology
 
 The following components are intentionally not open sourced:
 
@@ -534,7 +536,7 @@ These components are distributed as compiled extensions rather than source code.
 
 ## Calibration-Free
 
-TQ does not require a representative calibration dataset.
+CQ does not require a representative calibration dataset.
 
 ```text
 0 calibration samples
@@ -542,11 +544,11 @@ TQ does not require a representative calibration dataset.
 
 ## No Calibration Forward Passes
 
-TQ operates directly on model weights without running a calibration corpus through the model.
+CQ operates directly on model weights without running a calibration corpus through the model.
 
 ## Information-Theoretic
 
-TQ approaches quantization as a lossy source-coding problem and is grounded in coding-theoretic techniques designed around fundamental rate–distortion limits.
+CQ approaches quantization as a lossy source-coding problem and is grounded in coding-theoretic techniques designed around fundamental rate–distortion limits.
 
 ## Streaming
 
@@ -558,13 +560,13 @@ Removing the calibration dataset eliminates an external, workload-dependent inpu
 
 ## Deployment-Oriented
 
-TQ is designed as both a quantization technology and an inference system, with direct integration into vLLM.
+CQ is designed as both a quantization technology and an inference system, with direct integration into vLLM.
 
 ---
 
-# TQ vs. Calibration-Based Quantization
+# CQ vs. Calibration-Based Quantization
 
-|                                | TQ                  | Calibration-Based PTQ |
+|                                | CQ                  | Calibration-Based PCQ |
 | ------------------------------ | ------------------- | --------------------- |
 | Calibration dataset            | **Not required**    | Typically required    |
 | Calibration forward passes     | **Not required**    | Typically required    |
@@ -579,13 +581,13 @@ Calibration-free does **not** mean calibration-based approaches are inherently i
 
 Calibration provides a quantizer with additional information about model behavior and can be valuable for aggressive low-bit compression.
 
-TQ explores a different engineering and theoretical tradeoff:
+CQ explores a different engineering and theoretical tradeoff:
 
 > **Can high-quality low-bit LLM quantization be achieved without making representative data part of the quantization process?**
 
 ---
 
-# TQ Philosophy
+# CQ Philosophy
 
 We believe quantization should eventually behave like infrastructure.
 
@@ -606,7 +608,7 @@ Pretrained Model
       Infer
 ```
 
-That's what we're building with TQ and Quant Factory.
+That's what we're building with CQ and Quant Factory.
 
 **Quantize. Deploy. Infer.**
 
@@ -614,26 +616,26 @@ That's what we're building with TQ and Quant Factory.
 
 # Learn More
 
-For more information about TQ, calibration-free quantization, benchmarks, supported models, and TextCLF:
+For more information about CQ, calibration-free quantization, benchmarks, supported models, and ThousandML:
 
-**[https://www.textclf.com](https://www.textclf.com)**
+**[https://www.thousandml.com](https://www.thousandml.com)**
 
 Technical background:
 
-**[https://www.textclf.com/blog/calibration-free-quantization](https://www.textclf.com/blog/calibration-free-quantization)**
+**[https://www.thousandml.com/blog/calibration-free-quantization](https://www.thousandml.com/blog/calibration-free-quantization)**
 
 GitHub:
 
-**[https://github.com/textclf-api/quant-factory](https://github.com/textclf-api/quant-factory)**
+**[https://github.com/thousandml-api/quant-factory](https://github.com/thousandml-api/quant-factory)**
 
 ---
 
-# About TextCLF
+# About ThousandML
 
-TextCLF is building infrastructure for efficient Large Language Models.
+ThousandML is building infrastructure for efficient Large Language Models.
 
-TQ combines **calibration-free quantization**, an **information-theoretic approach to model compression**, and a **purpose-built inference runtime** to make large models smaller and more efficient to deploy.
+CQ combines **calibration-free quantization**, an **information-theoretic approach to model compression**, and a **purpose-built inference runtime** to make large models smaller and more efficient to deploy.
 
-Quant Factory provides the open pipeline around that technology for transforming pretrained models into TQ-quantized, inference-ready artifacts.
+Quant Factory provides the open pipeline around that technology for transforming pretrained models into CQ-quantized, inference-ready artifacts.
 
 **Quantize. Deploy. Infer.**

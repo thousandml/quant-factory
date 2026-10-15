@@ -14,10 +14,10 @@ RUN apt-get update && \
 #     git+https://github.com/huggingface/transformers.git
 
 RUN ldd --version | head -1 && \
-    python3 -c "import tq; print('TQ import OK:', tq.__file__)" && \
+    python3 -c "import cq; print('CQ import OK:', cq.__file__)" && \
     python3 -c "import vllm; print('vLLM:', vllm.__version__, vllm.__file__)" 
     #  && \
-    # python3 -c "from transformers import AutoConfig; c=AutoConfig.from_pretrained('textclf/Qwen3.8-Flash-Next-TQ-4bit', trust_remote_code=True); print(type(c), c.model_type)"
+    # python3 -c "from transformers import AutoConfig; c=AutoConfig.from_pretrained('thousandml/Qwen3.8-Flash-Next-CQ-4bit', trust_remote_code=True); print(type(c), c.model_type)"
 
 ENV VLLM_WSL2_ENABLE_PIN_MEMORY=1
 

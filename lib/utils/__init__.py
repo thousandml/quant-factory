@@ -1,1 +1,1 @@
-"""TQ quantization utilities."""
+"""CQ quantization utilities."""

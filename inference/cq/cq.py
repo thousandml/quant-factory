@@ -1,11 +1,6 @@
 from dataclasses import dataclass
 import json
 import os
-
-# Self-identifying Python-only runtime build marker. This intentionally prints
-# once per importing process so deployment logs prove which cq.py is active.
-_CQ_RUNTIME_BUILD = "qwen38-ngram-v9-dynamic-m"
-print(f"[CQ RUNTIME BUILD] {_CQ_RUNTIME_BUILD}", flush=True)
 from pathlib import Path
 import re
 import threading
@@ -167,26 +162,6 @@ def _install_cq_zero_checkpoint_weight_guard() -> None:
             or loaded_numel == 0
         )
 
-        if (
-            _CQ_RUNTIME_ACTIVE
-            and os.environ.get("CQ_DEBUG_DISPATCH", "0") == "1"
-        ):
-            shard_id = kwargs.get("shard_id", None)
-            if shard_id is None and args:
-                shard_id = args[0]
-            print(
-                "[CQ MERGED LOADER PROBE]",
-                "module=", type(self).__name__,
-                "param_type=", type(param).__name__,
-                "param_shape=", tuple(getattr(param, "shape", ())),
-                "loaded_type=", type(loaded_weight).__name__,
-                "loaded_shape=", loaded_shape,
-                "loaded_numel=", loaded_numel,
-                "zero_sized=", zero_sized,
-                "shard_id=", shard_id,
-                flush=True,
-            )
-
         if guard_enabled and _CQ_RUNTIME_ACTIVE and zero_sized:
             if os.environ.get("CQ_DEBUG_DISPATCH", "0") == "1":
                 shard_id = kwargs.get("shard_id", None)
@@ -206,25 +181,7 @@ def _install_cq_zero_checkpoint_weight_guard() -> None:
             # vLLM attempts merged-column slicing.
             return
 
-        try:
-            return original(self, param, loaded_weight, *args, **kwargs)
-        except Exception as exc:
-            if _CQ_RUNTIME_ACTIVE:
-                shard_id = kwargs.get("shard_id", None)
-                if shard_id is None and args:
-                    shard_id = args[0]
-                print(
-                    "[CQ MERGED LOADER ERROR]",
-                    "module=", type(self).__name__,
-                    "param_type=", type(param).__name__,
-                    "param_shape=", tuple(getattr(param, "shape", ())),
-                    "loaded_type=", type(loaded_weight).__name__,
-                    "loaded_shape=", tuple(getattr(loaded_weight, "shape", ())),
-                    "shard_id=", shard_id,
-                    "error=", repr(exc),
-                    flush=True,
-                )
-            raise
+        return original(self, param, loaded_weight, *args, **kwargs)
 
     _cq_guarded_weight_loader_v2._cq_zero_checkpoint_guard = True
     _cq_guarded_weight_loader_v2._cq_original = original
@@ -249,146 +206,6 @@ try:
     from vllm.model_executor.layers.vocab_parallel_embedding import VocabParallelEmbedding
 except Exception:
     VocabParallelEmbedding = ()
-
-# Active CQ config for model-specific constructors that intentionally pass
-# quant_config=None (Qwen3.8 PLE does this on the preview branch).
-_CQ_ACTIVE_CONFIG = None
-_CQ_ORIGINAL_VOCAB_EMBED_INIT = None
-
-def _cq_set_active_config(config) -> None:
-    global _CQ_ACTIVE_CONFIG
-    _CQ_ACTIVE_CONFIG = config
-
-def _cq_manifest_unique_ngram_group(manifest) -> str | None:
-    if manifest is None:
-        return None
-    groups = set()
-    for name in getattr(manifest, "quantized_layers", ()): 
-        sname = str(name)
-        if not re.search(r"\.shard_\d+$", sname, re.IGNORECASE):
-            continue
-        try:
-            meta = manifest.load_meta(sname)
-        except Exception:
-            continue
-        if meta.get("target_kind") != "cq_ngram_chunked_shard":
-            continue
-        group = str(meta.get("embedding_group") or re.sub(
-            r"\.shard_\d+$", "", sname, flags=re.IGNORECASE
-        ))
-        groups.add(group)
-    if len(groups) == 1:
-        return next(iter(groups))
-    return None
-
-def _install_cq_ple_vocab_embedding_hook() -> None:
-    """Inject CQ into Qwen3.8's huge PLE embedding before allocation.
-
-    The preview Qwen3.8 PLE constructor creates VocabParallelEmbedding with
-    quant_config=None, which bypasses CqConfig.get_quant_method() entirely and
-    selects UnquantizedEmbeddingMethod. That method immediately allocates the
-    ~95 GiB BF16 table. This wrapper only intervenes for the logical n-gram
-    embedding (or the distinctive huge PLE table whose embedding dimension
-    matches the unique N-gram manifest group), injects the active CqConfig, and supplies the manifest group as prefix when the model omitted
-    it. The original vLLM constructor then performs normal quant-method dispatch.
-    """
-    global _CQ_ORIGINAL_VOCAB_EMBED_INIT
-    if not isinstance(VocabParallelEmbedding, type):
-        return
-    current = getattr(VocabParallelEmbedding, "__init__", None)
-    if current is None or getattr(current, "_cq_ple_hook", False):
-        return
-    original = current
-    _CQ_ORIGINAL_VOCAB_EMBED_INIT = original
-
-    def _cq_vocab_embedding_init(self, *args, **kwargs):
-        active = _CQ_ACTIVE_CONFIG
-        manifest = getattr(active, "manifest", None) if active is not None else None
-
-        def _arg(pos, key, default=None):
-            if key in kwargs:
-                return kwargs[key]
-            if len(args) > pos:
-                return args[pos]
-            return default
-
-        num_embeddings = _arg(0, "num_embeddings")
-        embedding_dim = _arg(1, "embedding_dim")
-        quant_config = _arg(5, "quant_config")
-        prefix = str(_arg(6, "prefix", "") or "")
-
-        prefix_is_ngram = "ngram_embedding" in prefix.lower()
-
-        group = _cq_manifest_unique_ngram_group(manifest) if manifest is not None else None
-        expected_ngram_dim = None
-        if manifest is not None and group is not None:
-            # Derive M from checkpoint metadata; never assume a model-specific
-            # hidden/embedding size such as 160.
-            for name in getattr(manifest, "quantized_layers", ()):
-                sname = str(name)
-                if _cq_ngram_group_name(sname) != group:
-                    continue
-                try:
-                    meta = manifest.load_meta(sname)
-                except Exception:
-                    continue
-                if meta.get("target_kind") != "cq_ngram_chunked_shard":
-                    continue
-                dim = meta.get("ngram_embedding_dim")
-                matrix_shape = meta.get("matrix_shape")
-                if dim is None and isinstance(matrix_shape, (list, tuple)) and len(matrix_shape) == 2:
-                    dim = matrix_shape[0]
-                try:
-                    expected_ngram_dim = int(dim)
-                except Exception:
-                    expected_ngram_dim = None
-                break
-
-        try:
-            shape_is_ple = (
-                expected_ngram_dim is not None
-                and int(embedding_dim) == expected_ngram_dim
-                and int(num_embeddings) >= 1_000_000
-            )
-        except Exception:
-            shape_is_ple = False
-
-        if not (prefix_is_ngram or shape_is_ple):
-            group = None
-
-        if active is not None and manifest is not None and group is not None:
-            # Prefer the model-provided prefix when it is already the logical
-            # n-gram path. Otherwise use the unique manifest group so CQ's
-            # grouped resolver has an exact key.
-            effective_prefix = prefix if prefix_is_ngram else group
-            a = list(args)
-            if len(a) > 5:
-                a[5] = active
-            else:
-                kwargs["quant_config"] = active
-            if len(a) > 6:
-                a[6] = effective_prefix
-            else:
-                kwargs["prefix"] = effective_prefix
-            args = tuple(a)
-            print(
-                "[CQ PLE HOOK]",
-                "runtime_build=", _CQ_RUNTIME_BUILD,
-                "num_embeddings=", num_embeddings,
-                "embedding_dim=", embedding_dim,
-                "original_prefix=", repr(prefix),
-                "effective_prefix=", repr(effective_prefix),
-                "original_quant_config=", type(quant_config).__name__ if quant_config is not None else None,
-                flush=True,
-            )
-
-        return original(self, *args, **kwargs)
-
-    _cq_vocab_embedding_init._cq_ple_hook = True
-    _cq_vocab_embedding_init._cq_original = original
-    VocabParallelEmbedding.__init__ = _cq_vocab_embedding_init
-
-_install_cq_ple_vocab_embedding_hook()
 
 # MoE quantization support.
 #
@@ -2029,7 +1846,9 @@ def configure_cq_pipeline_partition(
 # ---------------------------------------------------------------------------
 # Qwen4Exp/Qwen3.8 chunked N-gram embedding support
 # ---------------------------------------------------------------------------
-CQ_NGRAM_CHUNK_ROWS = 1024  # fixed CUDA-kernel N
+CQ_NGRAM_CHUNK_ROWS = 1024
+CQ_NGRAM_EMBED_DIM = 160
+CQ_NGRAM_POLAR_BLOCKS = 160  # 160*1024/1024
 
 
 def _cq_ngram_shard_index(name: str) -> int:
@@ -2122,7 +1941,7 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
     """One native vLLM embedding backed by many chunked CQ shard records.
 
     The offline checkpoint remains physically sharded. Each record stores a
-    number of independent [M=model-specific,N=1024] CQ matrices. At runtime a global row
+    number of independent [M=160,N=1024] CQ matrices. At runtime a global row
     id is mapped to physical shard -> 1024-row chunk -> local column, and the
     selected embedding row is evaluated as CQ(W_chunk) @ one_hot(local_column).
     """
@@ -2137,7 +1956,7 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
             )
 
         self.chunk_rows = CQ_NGRAM_CHUNK_ROWS
-        self.embedding_dim: int | None = None
+        self.embedding_dim = CQ_NGRAM_EMBED_DIM
         self.shards: list[dict[str, int | str]] = []
 
         next_row = 0
@@ -2150,65 +1969,10 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
                     f"{meta.get('target_kind')!r}"
                 )
 
-            saved_chunk_rows = int(meta.get("ngram_chunk_rows") or CQ_NGRAM_CHUNK_ROWS)
+            chunk_rows = int(meta.get("ngram_chunk_rows") or CQ_NGRAM_CHUNK_ROWS)
+            embedding_dim = int(meta.get("ngram_embedding_dim") or CQ_NGRAM_EMBED_DIM)
             num_chunks = int(meta.get("ngram_num_chunks") or 0)
             valid_rows = int(meta.get("ngram_valid_rows") or 0)
-
-            matrix_shape = meta.get("matrix_shape")
-            matrix_m = matrix_n = -1
-            if isinstance(matrix_shape, (list, tuple)) and len(matrix_shape) == 2:
-                try:
-                    matrix_m = int(matrix_shape[0])
-                    matrix_n = int(matrix_shape[1])
-                except Exception:
-                    matrix_m = matrix_n = -1
-
-            embedding_dim_meta = meta.get("ngram_embedding_dim")
-            try:
-                embedding_dim = int(embedding_dim_meta) if embedding_dim_meta is not None else matrix_m
-            except Exception:
-                embedding_dim = matrix_m
-            if embedding_dim <= 0:
-                raise RuntimeError(
-                    f"CQ N-gram embedding dimension missing for {record}: "
-                    f"ngram_embedding_dim={embedding_dim_meta!r}, matrix_shape={matrix_shape!r}"
-                )
-            if matrix_m > 0 and matrix_m != embedding_dim:
-                raise RuntimeError(
-                    f"CQ N-gram M mismatch for {record}: "
-                    f"ngram_embedding_dim={embedding_dim}, matrix_shape={matrix_shape}"
-                )
-            if self.embedding_dim is None:
-                self.embedding_dim = embedding_dim
-            elif embedding_dim != self.embedding_dim:
-                raise RuntimeError(
-                    f"CQ N-gram embedding dimension changed within group {self.runtime_prefix!r}: "
-                    f"expected M={self.embedding_dim}, got M={embedding_dim} for {record}"
-                )
-
-            # N is fixed by the CUDA kernel at 1024. matrix_shape[1] describes
-            # the physical N used when this record was quantized. Normal records
-            # are N=1024; legacy short tails (N<1024) use the safe zero fallback.
-            storage_chunk_rows = matrix_n if matrix_n > 0 else CQ_NGRAM_CHUNK_ROWS
-
-            # The CUDA embedding kernel is fixed at N=1024.  A checkpoint
-            # record physically quantized with a shorter N (for example N=32)
-            # cannot be losslessly reinterpreted as N=1024 because the FFT/sign
-            # transform geometry is different.  For compatibility, mark such
-            # records as zero-fill tails and bypass the kernel for those rows.
-            # This is intentionally conservative and only affects short tail
-            # records; all normal N=1024 records use the compressed CQ kernel.
-            zero_fill_tail = storage_chunk_rows != CQ_NGRAM_CHUNK_ROWS
-            if zero_fill_tail:
-                print(
-                    "[CQ NGRAM ZERO TAIL]",
-                    "record=", record,
-                    "matrix_shape=", matrix_shape,
-                    "storage_chunk_rows=", storage_chunk_rows,
-                    "kernel_chunk_rows=", CQ_NGRAM_CHUNK_ROWS,
-                    "valid_rows=", valid_rows,
-                    flush=True,
-                )
             row_start = meta.get("embedding_row_start")
             row_end = meta.get("embedding_row_end")
             if row_start is None:
@@ -2218,14 +1982,10 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
             row_start = int(row_start)
             row_end = int(row_end)
 
-            if saved_chunk_rows != self.chunk_rows:
-                print(
-                    "[CQ NGRAM TAIL PAD]",
-                    "record=", record,
-                    "saved_valid_chunk_rows=", saved_chunk_rows,
-                    "storage_chunk_rows=", storage_chunk_rows,
-                    "valid_rows=", valid_rows,
-                    flush=True,
+            if chunk_rows != self.chunk_rows or embedding_dim != self.embedding_dim:
+                raise RuntimeError(
+                    f"CQ N-gram geometry mismatch for {record}: "
+                    f"chunk_rows={chunk_rows}, embedding_dim={embedding_dim}"
                 )
             if num_chunks <= 0 or valid_rows <= 0:
                 raise RuntimeError(
@@ -2249,18 +2009,10 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
                 "row_end": row_end,
                 "valid_rows": valid_rows,
                 "num_chunks": num_chunks,
-                "storage_chunk_rows": storage_chunk_rows,
-                "saved_chunk_rows": saved_chunk_rows,
-                "zero_fill_tail": bool(zero_fill_tail),
             })
             next_row = row_end
             total_chunks += num_chunks
 
-        if self.embedding_dim is None or self.embedding_dim <= 0:
-            raise RuntimeError(
-                f"CQ N-gram runtime {self.runtime_prefix!r} could not derive embedding dimension M"
-            )
-        self.embedding_dim = int(self.embedding_dim)
         self.valid_rows = int(next_row)
         self.total_chunks = int(total_chunks)
         self.device = _cq_runtime_device()
@@ -2280,8 +2032,6 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
             "physical_shards=", len(self.shards),
             "chunks=", self.total_chunks,
             "rows=", self.valid_rows,
-            "M=", self.embedding_dim,
-            "N=", self.chunk_rows,
             flush=True,
         )
 
@@ -2307,16 +2057,11 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
         # This avoids concatenating/repacking the offline format while still
         # replacing vLLM's one giant dense embedding parameter.
         for ordinal, shard in enumerate(self.shards):
-            # Short-N tail records are deliberately zero-filled at lookup time
-            # and never enter the fixed-N=1024 CUDA kernel, so they need no
-            # compressed runtime parameters.
-            if bool(shard.get("zero_fill_tail", False)):
-                continue
             num_chunks = int(shard["num_chunks"])
             packed_name, u_name, std_name = self._slot_names(ordinal)
             packed = Parameter(
                 torch.empty(
-                    (num_chunks, self.embedding_dim, 520),
+                    (num_chunks, CQ_NGRAM_POLAR_BLOCKS, 520),
                     dtype=torch.uint8,
                     device=self.device,
                 ),
@@ -2344,8 +2089,6 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
     @torch.no_grad()
     def process_weights_after_loading(self, layer: torch.nn.Module) -> None:
         for ordinal, shard in enumerate(self.shards):
-            if bool(shard.get("zero_fill_tail", False)):
-                continue
             record = str(shard["record"])
             tensors = self.quant_config.manifest.load_tensors(record)
             packed = tensors.get("packed_all")
@@ -2353,7 +2096,7 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
                 raise RuntimeError(f"CQ N-gram record {record} has no packed_all")
 
             num_chunks = int(shard["num_chunks"])
-            expected = (num_chunks, self.embedding_dim, 520)
+            expected = (num_chunks, CQ_NGRAM_POLAR_BLOCKS, 520)
             if tuple(packed.shape) != expected:
                 raise RuntimeError(
                     f"CQ N-gram packed shape mismatch for {record}: "
@@ -2423,15 +2166,6 @@ class CqNgramEmbeddingMethod(QuantizeMethodBase):
             row_start = int(shard["row_start"])
             row_end = int(shard["row_end"])
             shard_mask = (flat >= row_start) & (flat < row_end)
-
-            # Compatibility path for a physically short-N checkpoint tail.
-            # User explicitly allowed zero filling.  Do not feed the short-N
-            # compressed payload to the fixed N=1024 kernel.
-            if bool(shard.get("zero_fill_tail", False)):
-                shard_positions = torch.nonzero(shard_mask, as_tuple=False).reshape(-1)
-                out[shard_positions] = 0
-                continue
-
             shard_rows = flat[shard_mask] - row_start
             chunk_ids = torch.div(shard_rows, self.chunk_rows, rounding_mode="floor")
             local_ids = torch.remainder(shard_rows, self.chunk_rows)
@@ -2487,7 +2221,6 @@ class CqConfig(QuantizationConfig):
         # merged-column zero-placeholder compatibility guard before model
         # modules or checkpoint loaders are created.
         _cq_set_runtime_active(True)
-        _cq_set_active_config(self)
         # vLLM constructs the quantization config before it supplies the model
         # name/path. Defer manifest resolution until maybe_update_config().
         self.manifest = manifest
@@ -2542,7 +2275,6 @@ class CqConfig(QuantizationConfig):
         when set, remains an explicit override.
         """
         _cq_set_runtime_active(True)
-        _cq_set_active_config(self)
         self.manifest = get_active_cq_manifest(
             model_name,
             revision=revision,
@@ -2557,10 +2289,6 @@ class CqConfig(QuantizationConfig):
         prefix: str,
     ) -> QuantizeMethodBase | None:
 
-        # Re-establish the process-local active config after multiprocessing
-        # deserialization before any model-specific embedding constructor runs.
-        _cq_set_runtime_active(True)
-        _cq_set_active_config(self)
         manifest = self.manifest
 
         if manifest is None:
@@ -2572,37 +2300,13 @@ class CqConfig(QuantizationConfig):
         # Native vLLM constructs ONE VocabParallelEmbedding for the complete
         # table, while the checkpoint/CQ storage is split into .shard_N records.
         if isinstance(VocabParallelEmbedding, type) and isinstance(layer, VocabParallelEmbedding):
-            # Always emit this for now: it proves whether vLLM asks CQ for a
-            # quant method for the giant PLE table and exposes the exact prefix.
-            print(
-                "[CQ EMBEDDING PROBE]",
-                "runtime_build=", _CQ_RUNTIME_BUILD,
-                "prefix=", repr(prefix),
-                "type=", type(layer).__name__,
-                "num_embeddings=", getattr(layer, "num_embeddings", None),
-                "embedding_dim=", getattr(layer, "embedding_dim", None),
-                flush=True,
-            )
             ngram_records = _cq_resolve_ngram_group(manifest, prefix)
             if ngram_records is not None:
-                print(
-                    "[CQ NGRAM GROUP RESOLVED]",
-                    "prefix=", repr(prefix),
-                    "records=", len(ngram_records),
-                    "first=", ngram_records[0],
-                    "last=", ngram_records[-1],
-                    flush=True,
-                )
                 return CqNgramEmbeddingMethod(
                     self,
                     runtime_prefix=prefix,
                     records=ngram_records,
                 )
-            print(
-                "[CQ NGRAM GROUP MISS]",
-                "prefix=", repr(prefix),
-                flush=True,
-            )
 
         # ============================================================
         # Linear

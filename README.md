@@ -72,7 +72,7 @@ The quantization pipeline is incremental, so completed records are persisted as 
 After quantization finishes:
 
 ```bash
-python build_convert_upload_cq_model_incremental_qwen4exp.py \
+python build_convert_upload.py \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-CQ-4bit \
   --no-upload
@@ -172,7 +172,7 @@ In short:
 ./quantize-model meta-llama/Llama-3.1-8B-Instruct
 
 # 2. Build
-python build_convert_upload_cq_model_incremental_qwen4exp.py \
+python build_convert_upload.py \
   --model meta-llama/Llama-3.1-8B-Instruct \
   --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-CQ-4bit \
   --no-upload

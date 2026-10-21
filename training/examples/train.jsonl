@@ -1,0 +1,2 @@
+{"text":"Question: What is quantization? Answer: Quantization represents model weights with fewer bits."}
+{"text":"Question: What does LoRA train? Answer: LoRA trains small low-rank adapter matrices while keeping the base weights frozen."}

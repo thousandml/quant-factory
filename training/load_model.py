@@ -7,6 +7,7 @@ from cq_linear import CQLinear, CQOutputSlice
 from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
 from residual_names import resolve_residual
+from residual_placeholders import is_cq_placeholder
 
 
 def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=False):
@@ -72,6 +73,8 @@ def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=Fa
                     continue
                 destination = resolve_residual(key, residual_targets, text_only=text_only)
                 if destination is None:
+                    continue
+                if is_cq_placeholder(key, f.get_slice(key).get_shape(), destination, destinations):
                     continue
                 parent_name, _, attr = destination.rpartition('.')
                 try:

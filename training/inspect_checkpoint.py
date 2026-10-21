@@ -7,6 +7,7 @@ import torch
 from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
 from residual_names import resolve_residual
+from residual_placeholders import is_cq_placeholder
 
 
 def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False):
@@ -62,7 +63,10 @@ def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False
                 destination = resolve_residual(name, targets, text_only=text_only)
                 if destination is None:
                     continue
-                if list(targets[destination].shape) != f.get_slice(name).get_shape():
+                shape = f.get_slice(name).get_shape()
+                if is_cq_placeholder(name, shape, destination, quantized):
+                    continue
+                if list(targets[destination].shape) != shape:
                     raise ValueError(f'Residual shape mismatch: {name} -> {destination}; checkpoint_shape={f.get_slice(name).get_shape()}, model_shape={list(targets[destination].shape)}, destination_quantized={destination.removesuffix(".weight") in quantized}. Check whether this projection is represented by a fused CQ record or has an architecture-specific layout.')
                 loaded.add(destination)
                 covered_alias_ids.add(id(targets[destination]))

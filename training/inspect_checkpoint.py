@@ -6,7 +6,7 @@ from safetensors import safe_open
 import torch
 from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
-from tensor_names import resolve_tensor_name, is_unmodeled_auxiliary
+from tensor_names import resolve_tensor_name, is_unmodeled_auxiliary, covered_quantized_weight
 
 
 def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False):
@@ -59,7 +59,7 @@ def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False
     for filename in files:
         with safe_open(str(root / filename),framework='pt',device='cpu') as f:
             for name in f.keys():
-                if name.endswith('.weight') and name[:-7] in quantized:
+                if covered_quantized_weight(name, quantized):
                     continue
                 if is_unmodeled_auxiliary(name, targets, text_only):
                     skipped_auxiliary += 1
@@ -73,7 +73,7 @@ def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False
                 residual_sources[resolved] = name
                 loaded.add(resolved)
                 covered_alias_ids.add(id(targets[resolved]))
-    missing = [n for n,t in parameters.items() if not (n.endswith('.weight') and n[:-7] in quantized)
+    missing = [n for n,t in parameters.items() if not covered_quantized_weight(n, quantized)
                and n not in loaded and id(t) not in covered_alias_ids]
     if missing:
         raise ValueError(f'Missing residual parameters: {missing[:30]}')

@@ -6,7 +6,7 @@ from safetensors import safe_open
 from cq_linear import CQLinear, CQOutputSlice
 from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
-from tensor_names import resolve_tensor_name, is_unmodeled_auxiliary
+from tensor_names import resolve_tensor_name, is_unmodeled_auxiliary, covered_quantized_weight
 
 
 def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=False):
@@ -69,7 +69,7 @@ def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=Fa
     for filename in files:
         with safe_open(str(root / filename), framework='pt', device='cpu') as f:
             for key in f.keys():
-                if key.endswith('.weight') and key[:-7] in destinations:
+                if covered_quantized_weight(key, destinations):
                     continue
                 if is_unmodeled_auxiliary(key, all_residual_targets, text_only):
                     continue

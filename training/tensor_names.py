@@ -28,3 +28,18 @@ def is_unmodeled_auxiliary(name, available_names, text_only=False):
     scope = namespace(name)
     return bool(text_only and scope in ('vision', 'audio', 'mtp') and
                 not any(namespace(candidate) == scope for candidate in available_names))
+
+
+def covered_quantized_weight(name, destinations):
+    """Return True only when a checkpoint weight is covered by a planned CQ destination.
+
+    Canonicalize *both* names to allow text-only language_model/model wrappers.
+    Never skip biases or other tensors, even under a CQ-covered module.
+    """
+    if not name.endswith('.weight'):
+        return False
+    module = name[:-len('.weight')]
+    scope = namespace(module)
+    canonical = normalize(module)
+    return any(namespace(dest) == scope and normalize(dest) == canonical
+               for dest in destinations)

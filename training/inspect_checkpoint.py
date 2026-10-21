@@ -6,6 +6,7 @@ from safetensors import safe_open
 import torch
 from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
+from residual_names import resolve_residual
 
 
 def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False):
@@ -58,12 +59,13 @@ def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False
             for name in f.keys():
                 if name.endswith('.weight') and name[:-7] in quantized:
                     continue
-                if name not in targets:
-                    raise ValueError(f'Unknown residual tensor: {name}')
-                if list(targets[name].shape) != f.get_slice(name).get_shape():
-                    raise ValueError(f'Residual shape mismatch: {name}')
-                loaded.add(name)
-                covered_alias_ids.add(id(targets[name]))
+                destination = resolve_residual(name, targets, text_only=text_only)
+                if destination is None:
+                    continue
+                if list(targets[destination].shape) != f.get_slice(name).get_shape():
+                    raise ValueError(f'Residual shape mismatch: {name} -> {destination}')
+                loaded.add(destination)
+                covered_alias_ids.add(id(targets[destination]))
     missing = [n for n,t in parameters.items() if not (n.endswith('.weight') and n[:-7] in quantized)
                and n not in loaded and id(t) not in covered_alias_ids]
     if missing:

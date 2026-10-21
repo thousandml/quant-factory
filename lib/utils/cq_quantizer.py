@@ -1,16 +1,16 @@
 
 from __future__ import annotations
 
-CQ_QUANTIZER_BUILD = "qwen4exp-ngram-1024x160-v9"
+CQ_QUANTIZER_BUILD = "cq-v1"
 print(
-    f"[QT+RHT] Loaded quantizer build {CQ_QUANTIZER_BUILD} from {__file__}",
+    f"[CQ] Loaded quantizer build {CQ_QUANTIZER_BUILD} from {__file__}",
     flush=True,
 )
 
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Iterator, Dict, List, Tuple
+from typing import Optional, Iterator, Dict, List
 
 import gc
 import os
@@ -21,10 +21,6 @@ import torch
 from safetensors import safe_open
 from huggingface_hub import snapshot_download
 
-import os
-import math
-import pathlib
-from typing import Dict, Tuple, Optional, Union, List
 try:
     from . import _cq_core
 except ImportError as _cq_core_import_error:
@@ -42,16 +38,13 @@ def _require_cq_core():
         )
     return _cq_core
 
-import numpy as np
-import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM, PreTrainedModel
+from transformers import PreTrainedModel
+#from cqdm import cqdm
 
 import torch.nn.functional as F
-import json, pathlib, torch
+import json
 
-from transformers import AutoConfig
-from accelerate import init_empty_weights
 
 
 # Qwen3.8 / Qwen4Exp N-gram CQ geometry.  The source checkpoint stores
@@ -444,7 +437,7 @@ def _discover_ngram_embedding_targets(
     if not physical:
         if verbose:
             print(
-                "[QT+RHT] N-gram chunk discovery: 0 matching "
+                "[CQ] N-gram chunk discovery: 0 matching "
                 "*.ngram_embedding.shard_N.weight tensors",
                 flush=True,
             )
@@ -472,7 +465,7 @@ def _discover_ngram_embedding_targets(
         group_chunks = 0
 
         if verbose:
-            print(f"[QT+RHT] N-gram chunked group: {group}", flush=True)
+            print(f"[CQ] N-gram chunked group: {group}", flush=True)
 
         for shard_idx, entry in members:
             rows, dim = map(int, entry.shape)
@@ -513,7 +506,7 @@ def _discover_ngram_embedding_targets(
 
         if verbose:
             print(
-                f"[QT+RHT] N-gram group summary: {len(members)} physical shards, "
+                f"[CQ] N-gram group summary: {len(members)} physical shards, "
                 f"{group_chunks:,} x [1024,160] chunks, {global_row:,} rows, "
                 f"{group_params / 1e9:.3f}B params, "
                 f"raw INT4={group_params / 2 / 2**30:.2f} GiB",
@@ -552,7 +545,7 @@ def discover_native_vllm_quantization_targets_from_state(
     ]
 
     print(
-        f"[QT+RHT] NGRAM-DISCOVERY-v5 ACTIVE: "
+        f"[CQ] NGRAM-DISCOVERY-v5 ACTIVE: "
         f"checkpoint_entries={len(entries)}, rank2={len(rank2_entries)}, "
         f"ngram/ple/shardN={len(ngram_key_entries)}",
         flush=True,
@@ -560,7 +553,7 @@ def discover_native_vllm_quantization_targets_from_state(
 
     for e in ngram_key_entries[:20]:
         print(
-            f"[QT+RHT] NGRAM-CANDIDATE-v5: "
+            f"[CQ] NGRAM-CANDIDATE-v5: "
             f"{e.name} shape={tuple(e.shape)} params={e.numel:,}",
             flush=True,
         )
@@ -597,7 +590,7 @@ def discover_native_vllm_quantization_targets_from_state(
             if t.embedding_group is not None
         })
         print(
-            f"[QT+RHT] N-gram embedding CQ: {len(embedding_targets)} chunks "
+            f"[CQ] N-gram embedding CQ: {len(embedding_targets)} chunks "
             f"across {emb_groups} physical table(s), "
             f"{emb_params / 1e9:.3f}B params"
         )
@@ -643,7 +636,7 @@ def discover_native_vllm_quantization_targets_from_state(
             if not all(_native_source_allowed(e) for e in source_entries):
                 if verbose:
                     print(
-                        f"[QT+RHT] native fusion skipped by explicit exclusion: "
+                        f"[CQ] native fusion skipped by explicit exclusion: "
                         f"target={native_base} sources={source_bases}",
                         flush=True,
                     )
@@ -739,16 +732,16 @@ def discover_native_vllm_quantization_targets_from_state(
         total_numel = sum(t.numel for t in targets)
         fused = sum(1 for t in targets if "fused" in t.kind)
         print(
-            f"[QT+RHT] NGRAM-DISCOVERY-v5 RESULT: "
+            f"[CQ] NGRAM-DISCOVERY-v5 RESULT: "
             f"embedding_targets={len(embedding_targets)}, "
             f"embedding_params={sum(t.numel for t in embedding_targets) / 1e9:.3f}B",
             flush=True,
         )
-        print(f"[QT+RHT] Native-vLLM layout: {len(targets)} CQ targets")
-        print(f"[QT+RHT] Native packed/fused targets: {fused}")
-        print(f"[QT+RHT] Target parameters: {total_numel / 1e9:.3f}B")
+        print(f"[CQ] Native-vLLM layout: {len(targets)} CQ targets")
+        print(f"[CQ] Native packed/fused targets: {fused}")
+        print(f"[CQ] Target parameters: {total_numel / 1e9:.3f}B")
         print(
-            f"[QT+RHT] Raw INT4 payload estimate: "
+            f"[CQ] Raw INT4 payload estimate: "
             f"{total_numel / 2 / 2**30:.2f} GiB"
         )
 
@@ -885,10 +878,10 @@ def discover_quantization_targets_from_state(
     if verbose:
         total_numel = sum(t.numel for t in targets)
 
-        print(f"[QT+RHT] Discovered {len(targets)} quantization targets")
-        print(f"[QT+RHT] Target parameters: {total_numel / 1e9:.3f}B")
+        print(f"[CQ] Discovered {len(targets)} quantization targets")
+        print(f"[CQ] Target parameters: {total_numel / 1e9:.3f}B")
         print(
-            f"[QT+RHT] Raw INT4 payload estimate: "
+            f"[CQ] Raw INT4 payload estimate: "
             f"{total_numel / 2 / 2**30:.2f} GiB"
         )
 
@@ -1017,9 +1010,6 @@ def _hf_config_to_dict(cfg):
     # cfg is model.config; convert to plain dict
     return cfg.to_dict() if hasattr(cfg, "to_dict") else cfg.__dict__
 
-from typing import Tuple
-import time
-from tqdm import tqdm
 
 try:
     from safetensors.torch import save_file as save_safetensors, load_file as load_safetensors
@@ -1027,7 +1017,6 @@ try:
 except Exception:
     HAVE_SAFE = False
 
-import math
 
 FIXED_SEED_D_R = 987654321
 FIXED_SEED_D_L = 123456789
@@ -1071,8 +1060,6 @@ def fft_forward_real_pack_torch_left(W: torch.Tensor) -> torch.Tensor:
     raise RuntimeError("This CQ primitive is private and only available through _cq_core.so")
 
 
-import math
-import torch
 
 
 #@torch.compile(mode="reduce-overhead")  # Optimize for performance
@@ -1172,9 +1159,7 @@ def normal_iid_at_indices_cuda(indices: torch.Tensor, out_dtype: torch.dtype = t
     # Avoiding intermediate half conversions saves overhead
     return z.to(out_dtype)
 
-import torch
 
-import torch.nn.functional as F
 
 #@torch.inference_mode()
 # @torch.compile(mode='max-autotune',dynamic=True)
@@ -1431,8 +1416,6 @@ def replace_quantized_linears_with_onthefly(model, quantized_records, dtype=torc
 
 
 
-import torch
-import torch.nn.functional as F
 
 def pack_bits_uint8(bits: torch.Tensor, bitorder: str = "little") -> torch.Tensor:
     """Implementation moved to the private _cq_core native extension."""
@@ -2028,7 +2011,6 @@ def unpack_bits_little(packed, num_bits):
 
     return bits[:num_bits]
 
-import torch
 
 def encoder4polar_packed_torch_batched(Miu_packed: torch.Tensor, N: int) -> torch.Tensor:
     """Implementation moved to the private _cq_core native extension."""
@@ -2083,6 +2065,46 @@ def restore_full_packed_from_selected_packed(
     full_packed[:, byte_idx] |= selected_bits * masks
 
     return full_packed
+
+# Checkpoint naming compatibility (independent of removed legacy codecs).
+def _deepseek_v4_flash_key(layer_name: str) -> list[str]:
+    if layer_name.startswith("model."):
+        layer_name = layer_name[len("model."):]  # layers.0....
+
+    keys = []
+
+    # Attention
+    attn = layer_name.replace(".self_attn.", ".attn.")
+    attn = attn.replace(".q_a_proj", ".wq_a")
+    attn = attn.replace(".q_b_proj", ".wq_b")
+    attn = attn.replace(".kv_proj", ".wkv")
+    attn = attn.replace(".o_a_proj", ".wo_a")
+    attn = attn.replace(".o_b_proj", ".wo_b")
+    if attn != layer_name:
+        keys.append(attn)
+
+    # Shared experts: gate/up/down usually map to w1/w3/w2
+    if ".mlp.shared_experts." in layer_name:
+        base = layer_name.replace(".mlp.shared_experts.", ".ffn.shared_experts.")
+
+        keys.append(base.replace(".gate_proj", ".w1"))
+        keys.append(base.replace(".down_proj", ".w2"))
+        keys.append(base.replace(".up_proj", ".w3"))
+
+        # fallback variants
+        keys.append(base.replace(".gate_proj", ".gate"))
+        keys.append(base.replace(".down_proj", ".down"))
+        keys.append(base.replace(".up_proj", ".up"))
+
+    # Non-shared MLP fallback
+    if ".mlp." in layer_name:
+        base = layer_name.replace(".mlp.", ".ffn.")
+        keys.append(base.replace(".gate_proj", ".w1"))
+        keys.append(base.replace(".down_proj", ".w2"))
+        keys.append(base.replace(".up_proj", ".w3"))
+
+    return list(dict.fromkeys(keys))
+
 
 # -----------------------------
 # Model wrapper: RHT + QT
@@ -2184,7 +2206,7 @@ def _quantize_ngram_chunked_target(
 
             if verbose and (chunk_id % 256 == 0 or chunk_id + 1 == num_chunks):
                 print(
-                    f"  [QT+RHT] ngram {target.target_name}: "
+                    f"  [CQ] ngram {target.target_name}: "
                     f"chunk {chunk_id + 1:,}/{num_chunks:,}",
                     flush=True,
                 )
@@ -2346,7 +2368,7 @@ class CQModelWrapper(nn.Module):
             )
 
         if verbose:
-            print(f"[QT+RHT] Building streaming checkpoint index for {model_name}")
+            print(f"[CQ] Building streaming checkpoint index for {model_name}")
 
         # This is not a full state dict. It is metadata + one-tensor loader.
         state = _load_state_dict_from_model(
@@ -2398,7 +2420,7 @@ class CQModelWrapper(nn.Module):
             all_entries_ngram = list(state.iter_entries())
 
             print(
-                f"[QT+RHT] NGRAM-v8 pre-scan: "
+                f"[CQ] NGRAM-v8 pre-scan: "
                 f"checkpoint_entries={len(all_entries_ngram)}",
                 flush=True,
             )
@@ -2411,7 +2433,7 @@ class CQModelWrapper(nn.Module):
             ngram_params = sum(int(t.numel) for t in ngram_targets)
 
             print(
-                f"[QT+RHT] NGRAM-v8 pre-discovery result: "
+                f"[CQ] NGRAM-v8 pre-discovery result: "
                 f"{len(ngram_targets)} physical shards, "
                 f"{ngram_params / 1e9:.3f}B params, "
                 f"raw INT4={ngram_params / 2 / 2**30:.2f} GiB",
@@ -2436,7 +2458,7 @@ class CQModelWrapper(nn.Module):
         elif verbose:
             arch_label = architectures[0] if architectures else model_type or "unknown"
             print(
-                f"[QT+RHT] N-gram pre-scan skipped for architecture {arch_label}",
+                f"[CQ] N-gram pre-scan skipped for architecture {arch_label}",
                 flush=True,
             )
 
@@ -2465,12 +2487,12 @@ class CQModelWrapper(nn.Module):
         total_params_after_ngram = sum(int(t.numel) for t in targets)
 
         print(
-            f"[QT+RHT] NGRAM-v8 merge: "
+            f"[CQ] NGRAM-v8 merge: "
             f"{len(added_ngram_targets)} n-gram targets added",
             flush=True,
         )
         print(
-            f"[QT+RHT] Authoritative target total after n-gram merge: "
+            f"[CQ] Authoritative target total after n-gram merge: "
             f"{len(targets)} targets, "
             f"{total_params_after_ngram / 1e9:.3f}B params, "
             f"raw INT4={total_params_after_ngram / 2 / 2**30:.2f} GiB",
@@ -2478,7 +2500,7 @@ class CQModelWrapper(nn.Module):
         )
 
         if verbose and len(targets) == 0:
-            print("\n[QT+RHT] No targets found. Showing rank-2 .weight tensors:")
+            print("\n[CQ] No targets found. Showing rank-2 .weight tensors:")
             shown = 0
 
             for entry in state.iter_entries():
@@ -2526,7 +2548,7 @@ class CQModelWrapper(nn.Module):
 
             if verbose:
                 print(
-                    f"\n[QT+RHT] Processing target "
+                    f"\n[CQ] Processing target "
                     f"{i + 1}/{len(targets)}: {layer_name}"
                 )
                 print(f"  source_keys:  {target.all_source_keys()}")
@@ -2544,7 +2566,7 @@ class CQModelWrapper(nn.Module):
                 layer_name,
             ):
                 if verbose:
-                    print(f"  [QT+RHT] Already saved, skipping")
+                    print(f"  [CQ] Already saved, skipping")
 
                 self._ensure_layer_in_layers_index(
                     save_path,
@@ -2665,16 +2687,17 @@ class CQModelWrapper(nn.Module):
                     ]:
                         layer_data.pop(key, None)
 
-                    torch.cuda.empty_cache()
+                    if os.environ.get("CQ_AGGRESSIVE_CUDA_CLEANUP") == "1":
+                        torch.cuda.empty_cache()
 
                 if verbose:
-                    print(f"  [QT+RHT] Successfully quantized {layer_name}")
+                    print(f"  [CQ] Successfully quantized {layer_name}")
 
             # except Exception as error:
             #     skipped += 1
             #     if verbose:
             #         print(
-            #             f"  [QT+RHT] Error quantizing "
+            #             f"  [CQ] Error quantizing "
             #             f"{layer_name}: {error}"
             #         )
             except Exception as error:
@@ -2683,7 +2706,7 @@ class CQModelWrapper(nn.Module):
                 import traceback
 
                 print(
-                    f"\n[QT+RHT] Error quantizing {layer_name}\n"
+                    f"\n[CQ] Error quantizing {layer_name}\n"
                     f"  exception type: {type(error).__name__}\n"
                     f"  exception repr: {error!r}\n"
                 )
@@ -2698,8 +2721,9 @@ class CQModelWrapper(nn.Module):
                 if bias_tensor is not None:
                     del bias_tensor
 
-                gc.collect()
-                torch.cuda.empty_cache()
+                if os.environ.get("CQ_AGGRESSIVE_CUDA_CLEANUP") == "1":
+                    gc.collect()
+                    torch.cuda.empty_cache()
 
                 if verbose:
                     print(
@@ -2714,19 +2738,19 @@ class CQModelWrapper(nn.Module):
         )
 
         if verbose:
-            print("\n[QT+RHT] Layer-by-layer quantization complete!")
+            print("\n[CQ] Layer-by-layer quantization complete!")
             print(
-                f"[QT+RHT] Quantized {q} new targets, "
+                f"[CQ] Quantized {q} new targets, "
                 f"resumed {q_resumed}, skipped {skipped}"
             )
             print(
-                f"[QT+RHT] Represented parameters: "
+                f"[CQ] Represented parameters: "
                 f"{quantized_parameter_count / 1e9:.3f}B / "
                 f"{target_parameter_count / 1e9:.3f}B "
                 f"({coverage:.2%})"
             )
             print(
-                f"[QT+RHT] Expected raw INT4 payload: "
+                f"[CQ] Expected raw INT4 payload: "
                 f"{quantized_parameter_count / 2 / 2**30:.2f} GiB"
             )
 
@@ -2776,8 +2800,8 @@ class CQModelWrapper(nn.Module):
                 raise TypeError(f"expected list, got {type(obj).__name__}")
             return [str(x) for x in obj]
         except Exception as exc:
-            print(f"[QT+RHT] WARNING: unreadable _layers.json: {exc!r}")
-            print("[QT+RHT] It will be rebuilt from verified saved records.")
+            print(f"[CQ] WARNING: unreadable _layers.json: {exc!r}")
+            print("[CQ] It will be rebuilt from verified saved records.")
             return []
 
     def _ensure_layer_in_layers_index(self, save_path, layer_name: str) -> None:
@@ -2800,7 +2824,7 @@ class CQModelWrapper(nn.Module):
 
         if verbose:
             print(
-                f"[QT+RHT] Rebuilding _layers.json from "
+                f"[CQ] Rebuilding _layers.json from "
                 f"{len(targets)} discovered targets..."
             )
 
@@ -2816,7 +2840,7 @@ class CQModelWrapper(nn.Module):
 
         if verbose:
             print(
-                f"[QT+RHT] _layers.json rebuilt with "
+                f"[CQ] _layers.json rebuilt with "
                 f"{len(saved)} verified saved records"
             )
 
@@ -3025,7 +3049,7 @@ class CQModelWrapper(nn.Module):
                     return result
             except Exception as exc:
                 print(
-                    f"[QT+RHT] WARNING: could not read resume index "
+                    f"[CQ] WARNING: could not read resume index "
                     f"{index_path}: {exc}"
                 )
 
@@ -3106,7 +3130,7 @@ class CQModelWrapper(nn.Module):
                 self._cq_resume_shard_keys_cache[shard_cache_key] = stored_keys
             except Exception as exc:
                 print(
-                    f"[QT+RHT] WARNING: could not inspect CQ shard "
+                    f"[CQ] WARNING: could not inspect CQ shard "
                     f"{shard_path}: {exc}"
                 )
                 return False
@@ -3129,7 +3153,7 @@ class CQModelWrapper(nn.Module):
                 self._cq_resume_aliases_reported.add(pair)
                 if len(self._cq_resume_aliases_reported) <= 10:
                     print(
-                        f"  [QT+RHT] Resume alias: "
+                        f"  [CQ] Resume alias: "
                         f"{layer_name} -> {matched_name}"
                     )
 

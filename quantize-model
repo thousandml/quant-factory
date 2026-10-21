@@ -63,7 +63,7 @@ def quantize_model(model_name: str, output_dir: Path, device: str, verbose: bool
     print()
     print("[CQ] next step:")
     print(
-        "  python build_convert_upload_cq_model_incremental_qwen4exp.py "
+        "  python build_convert_upload.py "
         f"--model {model_name} --no-upload"
     )
     print("[CQ] omit --no-upload when you want to publish to Hugging Face.")

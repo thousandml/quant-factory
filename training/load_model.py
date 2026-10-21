@@ -85,7 +85,7 @@ def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=Fa
                     tensor = tensor.half()
                 old = getattr(parent, attr)
                 if tuple(old.shape) != tuple(tensor.shape):
-                    raise ValueError(f'Residual shape mismatch {key}')
+                    raise ValueError(f'Residual shape mismatch: {key} -> {destination}; checkpoint_shape={list(tensor.shape)}, model_shape={list(old.shape)}, destination_quantized={destination.removesuffix(".weight") in destinations}')
                 value = torch.nn.Parameter(tensor, requires_grad=False) if isinstance(old, torch.nn.Parameter) else tensor
                 for alias in alias_lookup.get(destination, [destination]):
                     p, _, a = alias.rpartition('.')

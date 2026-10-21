@@ -63,7 +63,7 @@ def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False
                 if destination is None:
                     continue
                 if list(targets[destination].shape) != f.get_slice(name).get_shape():
-                    raise ValueError(f'Residual shape mismatch: {name} -> {destination}')
+                    raise ValueError(f'Residual shape mismatch: {name} -> {destination}; checkpoint_shape={f.get_slice(name).get_shape()}, model_shape={list(targets[destination].shape)}, destination_quantized={destination.removesuffix(".weight") in quantized}. Check whether this projection is represented by a fused CQ record or has an architecture-specific layout.')
                 loaded.add(destination)
                 covered_alias_ids.add(id(targets[destination]))
     missing = [n for n,t in parameters.items() if not (n.endswith('.weight') and n[:-7] in quantized)

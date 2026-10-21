@@ -12,6 +12,16 @@ if ! python -c 'import sys; assert sys.version_info[:2] == (3, 12)' ; then
     exit 1
 fi
 
+echo "Fetching ThousandML native libraries..."
+
+if ! command -v git-lfs >/dev/null 2>&1; then
+    echo "ERROR: Git LFS is required."
+    echo "Install it with: sudo apt-get install git-lfs"
+    exit 1
+fi
+
+git lfs pull
+
 python -m pip install --upgrade pip setuptools wheel
 
 echo "[1/5] Checking protected binaries..."

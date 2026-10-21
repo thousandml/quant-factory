@@ -12,25 +12,23 @@ Training Factory by **ThousandML** is built around a simple idea: **start with a
 
 ```bash
 # 1. Install all three workflows (training, quantization, inference)
+git lfs install
 git clone https://github.com/thousandml/quant-factory.git
 cd quant-factory
 chmod +x install.sh
 ./install.sh
 
-# 2. Configure licensing
-export CQ_LICENSE_KEY="YOUR_THOUSANDML_LICENSE_KEY"
-
-# 3. Get a compatible CQ 4-bit checkpoint
+# 2. Get a compatible CQ 4-bit checkpoint
 hf download thousandml/Qwen3.8-27B-CQ-4bit \
   --local-dir ./models/Qwen3.8-27B-CQ-4bit
 
-# 4. Create a small training dataset
+# 3. Create a small training dataset
 cat > train.jsonl <<'JSONL'
 {"text":"Question: What does LoRA train? Answer: Small task-specific adapter weights."}
 {"text":"Question: What is a quantized base model? Answer: A model stored using reduced-precision weight representations."}
 JSONL
 
-# 5. Run a two-step smoke test
+# 4. Run a two-step smoke test
 python training/train.py \
   --model ./models/Qwen3.8-27B-CQ-4bit \
   --data train.jsonl \

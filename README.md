@@ -35,6 +35,7 @@ python training/train.py \
   --model ./models/Qwen3.8-27B-CQ-4bit \
   --data train.jsonl \
   --output ./outputs/smoke \
+   --text-only \
   --targets q_proj,v_proj \
   --kernel-module cq.cq_kernels \
   --max-steps 2 --max-length 128 --batch-size 1 --grad-accum 1
@@ -71,6 +72,7 @@ python training/train.py \
   --model ./models/Qwen3.8-27B-CQ-4bit \
   --data train.jsonl \
   --output ./outputs/my-lora \
+   --text-only \
   --kernel-module cq.cq_kernels \
   --targets q_proj,v_proj \
   --rank 16 --alpha 32 \

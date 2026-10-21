@@ -6,6 +6,7 @@ from safetensors import safe_open
 import torch
 from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
+from tensor_names import resolve_tensor_name, is_unmodeled_auxiliary
 
 
 def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False):
@@ -53,24 +54,32 @@ def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False
     targets = {**parameters,**buffers}
     loaded = set()
     covered_alias_ids = set()
+    residual_sources = {}
+    skipped_auxiliary = 0
     for filename in files:
         with safe_open(str(root / filename),framework='pt',device='cpu') as f:
             for name in f.keys():
                 if name.endswith('.weight') and name[:-7] in quantized:
                     continue
-                if name not in targets:
-                    raise ValueError(f'Unknown residual tensor: {name}')
-                if list(targets[name].shape) != f.get_slice(name).get_shape():
-                    raise ValueError(f'Residual shape mismatch: {name}')
-                loaded.add(name)
-                covered_alias_ids.add(id(targets[name]))
+                if is_unmodeled_auxiliary(name, targets, text_only):
+                    skipped_auxiliary += 1
+                    continue
+                resolved = resolve_tensor_name(name, targets)
+                previous = residual_sources.get(resolved)
+                if previous is not None:
+                    raise ValueError(f'Duplicate residual destination {resolved}: {previous}, {name}')
+                if list(targets[resolved].shape) != f.get_slice(name).get_shape():
+                    raise ValueError(f'Residual shape mismatch: {name} -> {resolved}')
+                residual_sources[resolved] = name
+                loaded.add(resolved)
+                covered_alias_ids.add(id(targets[resolved]))
     missing = [n for n,t in parameters.items() if not (n.endswith('.weight') and n[:-7] in quantized)
                and n not in loaded and id(t) not in covered_alias_ids]
     if missing:
         raise ValueError(f'Missing residual parameters: {missing[:30]}')
     return {'status':'headers_and_mapping_verified', 'model_type':cfg.model_type,
             'records':len(plans),'hf_quantized_projections':len(quantized),
-            'residual_tensors':len(loaded),'plans':plans,
+            'residual_tensors':len(loaded),'skipped_auxiliary_tensors':skipped_auxiliary,'plans':plans,
             'note':'Header/layout audit only; CUDA numerical parity and vLLM LoRA support are separate tests.'}
 
 if __name__ == '__main__':

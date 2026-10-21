@@ -6,6 +6,7 @@ from safetensors import safe_open
 from cq_linear import CQLinear, CQOutputSlice
 from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
+from tensor_names import resolve_tensor_name, is_unmodeled_auxiliary
 
 
 def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=False):
@@ -62,26 +63,30 @@ def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=Fa
     for name, param in model.named_parameters(remove_duplicate=False):
         aliases.setdefault(id(param), []).append(name)
     alias_lookup = {name: group for group in aliases.values() for name in group}
+    loaded_residuals = set()
+    all_residual_targets = {**dict(model.named_parameters(remove_duplicate=False)),
+                            **dict(model.named_buffers(remove_duplicate=False))}
     for filename in files:
         with safe_open(str(root / filename), framework='pt', device='cpu') as f:
             for key in f.keys():
                 if key.endswith('.weight') and key[:-7] in destinations:
                     continue
-                parent_name, _, attr = key.rpartition('.')
-                try:
-                    parent = model.get_submodule(parent_name) if parent_name else model
-                except AttributeError as e:
-                    raise ValueError(f'Unexpected residual key {key}') from e
-                if not hasattr(parent, attr):
-                    raise ValueError(f'Unexpected residual key {key}')
+                if is_unmodeled_auxiliary(key, all_residual_targets, text_only):
+                    continue
+                resolved = resolve_tensor_name(key, all_residual_targets)
+                if resolved in loaded_residuals:
+                    raise ValueError(f'Duplicate residual destination: {key} -> {resolved}')
+                loaded_residuals.add(resolved)
+                parent_name, _, attr = resolved.rpartition('.')
+                parent = model.get_submodule(parent_name) if parent_name else model
                 tensor = f.get_tensor(key).to('cuda')
                 if tensor.is_floating_point():
                     tensor = tensor.half()
                 old = getattr(parent, attr)
                 if tuple(old.shape) != tuple(tensor.shape):
-                    raise ValueError(f'Residual shape mismatch {key}')
+                    raise ValueError(f'Residual shape mismatch {key} -> {resolved}')
                 value = torch.nn.Parameter(tensor, requires_grad=False) if isinstance(old, torch.nn.Parameter) else tensor
-                for alias in alias_lookup.get(key, [key]):
+                for alias in alias_lookup.get(resolved, [resolved]):
                     p, _, a = alias.rpartition('.')
                     setattr(model.get_submodule(p) if p else model, a, value)
     missing = [name for name, value in list(model.named_parameters()) + list(model.named_buffers()) if value.is_meta]

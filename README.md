@@ -12,6 +12,8 @@ Training Factory by **ThousandML** is built around a simple idea: **start with a
 
 ```bash
 # 1. Install all three workflows (training, quantization, inference)
+sudo apt-get update
+sudo apt-get install -y git-lfs
 git lfs install
 git clone https://github.com/thousandml/quant-factory.git
 cd quant-factory

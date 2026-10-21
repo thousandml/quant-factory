@@ -14,8 +14,7 @@ Training Factory by **ThousandML** is built around a simple idea: **start with a
 # 1. Install all three workflows (training, quantization, inference)
 git clone https://github.com/thousandml/quant-factory.git
 cd quant-factory
-conda create -n thousandml python=3.12 -y
-conda activate thousandml
+chmod +x install.sh
 ./install.sh
 
 # 2. Configure licensing

@@ -4,7 +4,7 @@
 
 Training Factory by **ThousandML** is built around a simple idea: **start with a high-quality 4-bit CQ model and train lightweight LoRA adapters directly on it**, without first restoring the stored base weights to a full-precision checkpoint. Quantization, fine-tuning, and inference live in one repository.
 
-> **Scope:** Current training targets supported CQ-quantized Llama causal-language models on a single NVIDIA GPU. The CQ base is frozen; LoRA adapters are trained. Lower base-weight memory use can improve hardware accessibility and economics, but end-to-end cost savings and model quality depend on the model, task, sequence length, hardware, and baseline. No universal savings or accuracy guarantee is implied.
+> **Scope:** Training requires a CQ-quantized architecture supported by the installed training loader and LoRA target mapping. The Qwen3.8-27B-CQ-4bit commands below assume compatibility with your release; verify Qwen support before publishing these as tested instructions. The CQ base is frozen; LoRA adapters are trained. Lower base-weight memory use can improve hardware accessibility and economics, but end-to-end cost savings and model quality depend on the model, task, sequence length, hardware, and baseline. No universal savings or accuracy guarantee is implied.
 
 ## Quick start — fine-tune a 4-bit model
 
@@ -22,8 +22,8 @@ conda activate thousandml
 export CQ_LICENSE_KEY="YOUR_THOUSANDML_LICENSE_KEY"
 
 # 3. Get a compatible CQ 4-bit checkpoint
-hf download thousandml/Llama-3.1-8B-Instruct-CQ-4bit \
-  --local-dir ./models/Llama-3.1-8B-Instruct-CQ-4bit
+hf download thousandml/Qwen3.8-27B-CQ-4bit \
+  --local-dir ./models/Qwen3.8-27B-CQ-4bit
 
 # 4. Create a small training dataset
 cat > train.jsonl <<'JSONL'
@@ -33,7 +33,7 @@ JSONL
 
 # 5. Run a two-step smoke test
 python training/train.py \
-  --model ./models/Llama-3.1-8B-Instruct-CQ-4bit \
+  --model ./models/Qwen3.8-27B-CQ-4bit \
   --data train.jsonl \
   --output ./outputs/smoke \
   --targets q_proj,v_proj \
@@ -69,7 +69,7 @@ Start a longer LoRA run:
 
 ```bash
 python training/train.py \
-  --model ./models/Llama-3.1-8B-Instruct-CQ-4bit \
+  --model ./models/Qwen3.8-27B-CQ-4bit \
   --data train.jsonl \
   --output ./outputs/my-lora \
   --kernel-module cq.cq_kernels \
@@ -104,12 +104,12 @@ For full options, use `python training/train.py --help` after configuring the re
 Already have a ThousandML CQ checkpoint? **Skip this section.** Otherwise, from the repository root:
 
 ```bash
-./quantize-model meta-llama/Llama-3.1-8B-Instruct \
+./quantize-model YOUR_ORG/Qwen3.8-27B \
   --output-dir ./quantized_models
 
 python build_convert_upload.py \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --repo-id YOUR_USERNAME/Llama-3.1-8B-Instruct-CQ-4bit \
+  --model YOUR_ORG/Qwen3.8-27B \
+  --repo-id YOUR_USERNAME/Qwen3.8-27B-CQ-4bit \
   --no-upload
 ```
 
@@ -118,20 +118,43 @@ CQ quantization supports a calibration-free workflow for compatible models. Foll
 ## Serve the CQ base model
 
 ```bash
-vllm serve thousandml/Llama-3.1-8B-Instruct-CQ-4bit \
+vllm serve thousandml/Qwen3.8-27B-CQ-4bit \
   --quantization cq
 ```
 
 **Serving a trained LoRA adapter** requires a vLLM/CQ runtime that actually supports adapter injection and target mapping. Once validated for your release, its configuration can look like:
 
 ```bash
-vllm serve ./models/Llama-3.1-8B-Instruct-CQ-4bit \
+vllm serve ./models/Qwen3.8-27B-CQ-4bit \
   --quantization cq \
   --enable-lora --max-lora-rank 16 \
   --lora-modules my-lora=./outputs/my-lora
 ```
 
 Do not assume adapter serving is compatible solely because training succeeds; validate end-to-end predictions on your deployment build.
+
+**Call the fine-tuned adapter** (in another terminal, after the server is ready):
+
+```bash
+# Check that the adapter is listed as "my-lora"
+curl http://localhost:8000/v1/models
+
+# Request a response from the fine-tuned model, not just the base checkpoint
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "my-lora",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Explain how LoRA fine-tuning works in one sentence."}
+    ],
+    "max_tokens": 128,
+    "temperature": 0.2
+  }'
+```
+
+The `model` field must match the adapter name given in `--lora-modules my-lora=...`. Use `thousandml/Qwen3.8-27B-CQ-4bit` instead to query the *base* model, if that is the ID exposed by `/v1/models`. This request only works after the CQ/vLLM runtime has been validated to load and apply the trained adapter.
+
 
 ## Installation checks and compatibility
 

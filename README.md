@@ -2,7 +2,7 @@
 
 **Fine-tune a quantized LLM. Spend less memory on the base model, and more of your budget on adaptation.**
 
-Training Factory by **ThousandML** is built around a simple idea: **start with a high-quality 4-bit CQ model and train lightweight LoRA adapters directly on it**, without first restoring the stored base weights to a full-precision checkpoint. Quantization, fine-tuning, and inference live in one repository.
+Training Factory by **ThousandML** (www.thousandml.com) is built around a simple idea: **start with a high-quality 4-bit CQ model and train lightweight LoRA adapters directly on it**, without first restoring the stored base weights to a full-precision checkpoint. Quantization, fine-tuning, and inference live in one repository.
 
 > **Scope:** Training requires a CQ-quantized architecture supported by the installed training loader and LoRA target mapping. The Qwen3.8-27B-CQ-4bit commands below assume compatibility with your release; verify Qwen support before publishing these as tested instructions. The CQ base is frozen; LoRA adapters are trained. Lower base-weight memory use can improve hardware accessibility and economics, but end-to-end cost savings and model quality depend on the model, task, sequence length, hardware, and baseline. No universal savings or accuracy guarantee is implied.
 

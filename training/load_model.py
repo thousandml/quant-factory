@@ -2,14 +2,13 @@
 import json
 from pathlib import Path
 import torch
-from accelerate import init_empty_weights
 from safetensors import safe_open
-from transformers import AutoConfig, AutoModelForCausalLM
 from cq_linear import CQLinear, CQOutputSlice
+from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
 
 
-def load_model(path, mapping_path=None, trust_remote_code=False):
+def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=False):
     root = Path(path)
     quant = root / 'quantization_data'
     index = json.loads((quant / 'cq_shards.json').read_text())
@@ -21,18 +20,10 @@ def load_model(path, mapping_path=None, trust_remote_code=False):
     mapping = json.loads(Path(mapping_path).read_text()) if mapping_path else {}
     if set(mapping) - names:
         raise ValueError('Mapping contains unknown record names')
-    cfg = AutoConfig.from_pretrained(root, trust_remote_code=trust_remote_code)
-    if getattr(cfg, 'model_type', None) != 'llama':
-        raise ValueError('Updated loader currently supports Llama layout only; other architectures need numerical/layout validation')
-    # This loader installs CQ itself; prevent Transformers quantization dispatch.
-    if hasattr(cfg, 'quantization_config'):
-        del cfg.quantization_config
-    with init_empty_weights():
-        model = AutoModelForCausalLM.from_config(cfg, trust_remote_code=trust_remote_code, torch_dtype=torch.float16)
-    model.tie_weights()
+    model, cfg = causal_lm_skeleton(root, trust_remote_code=trust_remote_code, text_only=text_only)
     linears = {name: [module.out_features, module.in_features]
                for name, module in model.named_modules() if isinstance(module, torch.nn.Linear)}
-    plans = plan_records(index, linears, mapping)
+    plans = plan_records(index, linears, mapping, skip_unmodeled_auxiliary=text_only)
     destinations = set()
     for plan in plans:
         record_name = plan['record']

@@ -2,14 +2,13 @@
 import argparse
 import json
 from pathlib import Path
-from accelerate import init_empty_weights
 from safetensors import safe_open
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM
+from model_factory import causal_lm_skeleton
 from checkpoint_layout import plan_records
 
 
-def inspect(path, mapping_path=None):
+def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False):
     root = Path(path)
     index = json.loads((root / 'quantization_data/cq_shards.json').read_text())
     if index.get('format') != 'cq_safetensors_shards_v1':
@@ -17,17 +16,10 @@ def inspect(path, mapping_path=None):
     names = json.loads((root / 'quantization_data/_layers.json').read_text())
     if len(names) != len(set(names)) or set(names) != set(index['layers']):
         raise ValueError('Manifest duplicates or shard-index mismatch')
-    cfg = AutoConfig.from_pretrained(root)
-    # if getattr(cfg, 'model_type', None) != 'llama':
-    #     raise ValueError('This preflight currently certifies Llama HF layout only')
-    if hasattr(cfg, 'quantization_config'):
-        del cfg.quantization_config
-    with init_empty_weights():
-        model = AutoModelForCausalLM.from_config(cfg, torch_dtype=torch.float16)
-    model.tie_weights()
+    model, cfg = causal_lm_skeleton(root, text_only=text_only, trust_remote_code=trust_remote_code)
     linears = {n: [m.out_features,m.in_features] for n,m in model.named_modules() if isinstance(m,torch.nn.Linear)}
     mapping = json.loads(Path(mapping_path).read_text()) if mapping_path else {}
-    plans = plan_records(index,linears,mapping)
+    plans = plan_records(index,linears,mapping, skip_unmodeled_auxiliary=text_only)
     quantized = {n for p in plans for n in p['destinations']}
     for plan in plans:
         loc = index['layers'][plan['record']]
@@ -85,10 +77,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model',required=True)
     parser.add_argument('--layer-map')
+    parser.add_argument('--trust-remote-code', action='store_true')
+    parser.add_argument('--text-only', action='store_true', help='Exclude auxiliary CQ records only when absent from the CausalLM skeleton')
     parser.add_argument('--output')
     args = parser.parse_args()
-    report = json.dumps(inspect(args.model,args.layer_map),indent=2)
+    report = json.dumps(inspect(args.model,args.layer_map,text_only=args.text_only,trust_remote_code=args.trust_remote_code),indent=2)
     if args.output:
         Path(args.output).write_text(report)
-    else:
-        print(report)
+    print(report)

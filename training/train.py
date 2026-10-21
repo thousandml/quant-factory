@@ -19,6 +19,7 @@ def main():
     p.add_argument('--data', required=True, help='JSONL: text or messages')
     p.add_argument('--output', default='outputs/cq-lora')
     p.add_argument('--layer-map')
+    p.add_argument('--text-only', action='store_true', help='Exclude absent vision/audio/MTP CQ records from text-only CausalLM')
     p.add_argument('--targets', default='q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj')
     p.add_argument('--rank', type=int, default=16)
     p.add_argument('--alpha', type=int, default=32)
@@ -38,10 +39,10 @@ def main():
     if a.max_length < 2 or a.rank < 1:
         raise ValueError('max-length >= 2 and rank >= 1 required')
     from inspect_checkpoint import inspect
-    inspect(a.model, a.layer_map)  # fail before CUDA weight allocation on layout/header errors
+    inspect(a.model, a.layer_map, text_only=a.text_only, trust_remote_code=a.trust_remote_code)  # fail before CUDA weight allocation on layout/header errors
     from kernel_backend import configure_backend
     configure_backend(a.kernel_module, a.kernel_backend)
-    model = load_model(a.model, a.layer_map, a.trust_remote_code)
+    model = load_model(a.model, a.layer_map, a.trust_remote_code, text_only=a.text_only)
     targets = a.targets.split(',')
     matched = [n for n, m in model.named_modules() if isinstance(m, torch.nn.Linear) and n.split('.')[-1] in targets]
     if not matched:

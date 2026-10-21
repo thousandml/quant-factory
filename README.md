@@ -15,8 +15,8 @@ Training Factory by **ThousandML** (www.thousandml.com) is built around a simple
 sudo apt-get update
 sudo apt-get install -y git-lfs
 git lfs install
-git clone https://github.com/thousandml/quant-factory.git
-cd quant-factory
+git clone https://github.com/thousandml/training-factory.git
+cd training-factory
 chmod +x install.sh
 ./install.sh
 

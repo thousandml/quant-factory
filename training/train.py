@@ -7,6 +7,7 @@ from datasets import load_dataset
 from peft import LoraConfig, get_peft_model
 from transformers import AutoTokenizer, AutoProcessor, Trainer, TrainingArguments
 from load_model import load_model
+from gradient_safety import prepare_trainable_lora, install_nonfinite_gradient_guards
 
 
 def main():
@@ -53,6 +54,8 @@ def main():
     load_report = model._cq_load_report
     model = get_peft_model(model, config)
     model.print_trainable_parameters()
+    prepare_trainable_lora(model)
+    _gradient_guards = install_nonfinite_gradient_guards(model)
     processor = None
     if not a.text_only:
         try:
@@ -135,10 +138,11 @@ def main():
             return batch
     args = TrainingArguments(output_dir=a.output, per_device_train_batch_size=a.batch_size,
         gradient_accumulation_steps=a.grad_accum, num_train_epochs=a.epochs,
-        max_steps=a.max_steps, learning_rate=a.learning_rate, fp16=True,
+        max_steps=a.max_steps, learning_rate=a.learning_rate, fp16=False, bf16=torch.cuda.is_bf16_supported(),
         gradient_checkpointing=True, gradient_checkpointing_kwargs={'use_reentrant': False},
         optim='adamw_torch', logging_steps=1, save_steps=100, save_total_limit=2,
-        report_to='none', remove_unused_columns=False, seed=42)
+        report_to='none', remove_unused_columns=False, seed=42,
+        max_grad_norm=1.0)
     trainer = Trainer(model=model, args=args, train_dataset=dataset,
                       data_collator=collate, processing_class=processor or tokenizer)
     result = trainer.train(resume_from_checkpoint=a.resume)

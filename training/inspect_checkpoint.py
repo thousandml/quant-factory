@@ -31,7 +31,7 @@ def inspect(path, mapping_path=None, *, text_only=False, trust_remote_code=False
         if not shard.is_file():
             shard = root / 'quantization_data' / plan['filename']
         m,n = plan['shape']
-        b = (m*n+1023)//1024
+        b = (m*((n+31)//32*32)+1023)//1024
         with safe_open(str(shard),framework='pt',device='cpu') as f:
             keys = loc['tensor_keys']
             expected = {'packed_all':[b,520]} if 'packed_all' in keys else {

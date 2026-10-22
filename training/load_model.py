@@ -107,7 +107,7 @@ def load_model(path, mapping_path=None, trust_remote_code=False, *, text_only=Fa
 def pack_record(rec, shape):
     """Match _load_cq_record_into_packed's exact 520-byte layout."""
     m, n = shape
-    b = (m * n + 1023) // 1024
+    b = (m * ((n + 31) // 32 * 32) + 1023) // 1024
     if 'packed_all' not in rec:
         packed = torch.zeros(b, 520, dtype=torch.uint8)
         for key, width, offset in [('SigRec1_select_packed', 7, 0),

@@ -30,6 +30,8 @@ def main():
     p.add_argument('--epochs', type=float, default=1)
     p.add_argument('--max-steps', type=int, default=-1)
     p.add_argument('--learning-rate', type=float, default=2e-4)
+    p.add_argument('--benchmark', action='store_true', help='Collect CUDA-synchronized optimizer-step timing and peak memory')
+    p.add_argument('--benchmark-warmup-steps', type=int, default=10)
     p.add_argument('--resume')
     p.add_argument('--trust-remote-code', action='store_true')
     a = p.parse_args()
@@ -37,6 +39,8 @@ def main():
         raise RuntimeError('CUDA GPU required')
     if int(os.environ.get('WORLD_SIZE', '1')) != 1:
         raise RuntimeError('This initial bridge supports one GPU only')
+    if a.benchmark_warmup_steps < 0:
+        raise ValueError('benchmark-warmup-steps must be nonnegative')
     if a.max_length < 2 or a.rank < 1:
         raise ValueError('max-length >= 2 and rank >= 1 required')
     from inspect_checkpoint import inspect
@@ -147,6 +151,9 @@ def main():
             labels[batch['attention_mask'] == 0] = -100
             batch['labels'] = labels
             return batch
+    if a.benchmark:
+        from benchmark import TokenCountingCollator
+        collate = TokenCountingCollator(collate)
     args = TrainingArguments(output_dir=a.output, per_device_train_batch_size=a.batch_size,
         gradient_accumulation_steps=a.grad_accum, num_train_epochs=a.epochs,
         max_steps=a.max_steps, learning_rate=a.learning_rate, fp16=False, bf16=torch.cuda.is_bf16_supported(),
@@ -156,6 +163,13 @@ def main():
         max_grad_norm=1.0)
     trainer = Trainer(model=model, args=args, train_dataset=dataset,
                       data_collator=collate, processing_class=processor or tokenizer)
+    if a.benchmark:
+        from benchmark import BenchmarkCallback
+        trainer.add_callback(BenchmarkCallback(
+            output_file=str(Path(a.output) / 'benchmark.json'),
+            warmup_steps=a.benchmark_warmup_steps,
+            token_counter=collate,
+        ))
     result = trainer.train(resume_from_checkpoint=a.resume)
     model.save_pretrained(a.output, safe_serialization=True)
     tokenizer.save_pretrained(a.output)

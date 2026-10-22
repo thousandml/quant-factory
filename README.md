@@ -149,7 +149,7 @@ curl http://localhost:8000/v1/chat/completions \
     ],
     "max_tokens": 128,
     "temperature": 0.2
-  }'
+  }' | python -m json.tool
 
 # Request example that includes image for multimodal models such as Qwen 3.8 27B
 curl -s http://localhost:8000/v1/chat/completions \

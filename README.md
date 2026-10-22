@@ -35,7 +35,6 @@ python training/train.py \
   --model ./models/Qwen3.8-27B-CQ-4bit \
   --data train.jsonl \
   --output ./outputs/smoke \
-   --text-only \
   --targets q_proj,v_proj \
   --kernel-module cq.cq_kernels \
   --max-steps 2 --max-length 128 --batch-size 1 --grad-accum 1
@@ -72,7 +71,6 @@ python training/train.py \
   --model ./models/Qwen3.8-27B-CQ-4bit \
   --data train.jsonl \
   --output ./outputs/my-lora \
-   --text-only \
   --kernel-module cq.cq_kernels \
   --targets q_proj,v_proj \
   --rank 16 --alpha 32 \
@@ -152,6 +150,33 @@ curl http://localhost:8000/v1/chat/completions \
     "max_tokens": 128,
     "temperature": 0.2
   }'
+
+# Request example that includes image for multimodal models such as Qwen 3.8 27B
+curl -s http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "my-lora",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Describe this image. What objects do you see, and what colors are they?"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://raw.githubusercontent.com/pytorch/hub/master/images/dog.jpg"
+            }
+          }
+        ]
+      }
+    ],
+    "max_tokens": 256,
+    "temperature": 0
+  }' | python -m json.tool
+
 ```
 
 The `model` field must match the adapter name given in `--lora-modules my-lora=...`. Use `thousandml/Qwen3.8-27B-CQ-4bit` instead to query the *base* model, if that is the ID exposed by `/v1/models`. This request only works after the CQ/vLLM runtime has been validated to load and apply the trained adapter.

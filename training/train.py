@@ -77,10 +77,15 @@ def main():
         data_root = Path(a.data).resolve().parent
         def collate(rows):
             prompts, images = [], []
+            # Multimodal checkpoints can also receive ordinary text-only batches.
+            # Never send an empty images=[] list to a processor that expects images.
             for row in rows:
                 messages = row.get('messages')
                 if not messages:
-                    raise ValueError('Multimodal mode requires messages with content blocks')
+                    if isinstance(row.get('text'), str):
+                        messages = [{'role': 'user', 'content': row['text']}]
+                    else:
+                        raise ValueError('Each training row needs text or messages')
                 row_images = []
                 for msg in messages:
                     content = msg.get('content', '')
@@ -97,12 +102,18 @@ def main():
                                     row_images.append(im.convert('RGB'))
                             elif isinstance(part, dict) and part.get('type') not in ('text', 'image'):
                                 raise ValueError(f"Unsupported modality {part.get('type')}; audio/video not implemented")
-                if len(row_images) != 1:
-                    raise ValueError('This initial bridge requires exactly one image per training row')
+                if len(row_images) > 1:
+                    raise ValueError('This initial bridge supports at most one image per training row')
                 prompts.append(processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False))
                 images.extend(row_images)
-            batch = processor(text=prompts, images=images, padding=True, truncation=True,
-                              max_length=a.max_length, return_tensors='pt')
+            if images and len(images) != len(rows):
+                raise ValueError('Mixed text-only and image-text rows in the same batch are not yet supported; use batch-size 1 or group rows by modality')
+            if images:
+                batch = processor(text=prompts, images=images, padding=True, truncation=True,
+                                  max_length=a.max_length, return_tensors='pt')
+            else:
+                batch = tokenizer(prompts, padding=True, truncation=True,
+                                  max_length=a.max_length, return_tensors='pt')
             if 'input_ids' not in batch or 'attention_mask' not in batch:
                 raise ValueError('Processor did not return token IDs and attention masks')
             labels = batch['input_ids'].clone()

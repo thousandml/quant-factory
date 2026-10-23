@@ -136,9 +136,9 @@ echo "Using CUDA toolkit: $CUDA_HOME"
 
 # A40 is SM 8.6; override TORCH_CUDA_ARCH_LIST for other GPUs.
 # Build from source because a matching cu130/torch2.13 wheel may not exist.
-MAX_JOBS="${MAX_JOBS:-4}" TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.6}" \
-CAUSAL_CONV1D_FORCE_BUILD=TRUE \
-    python -m pip install causal-conv1d --no-build-isolation --no-cache-dir
+# MAX_JOBS="${MAX_JOBS:-4}" TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.6}" \
+# CAUSAL_CONV1D_FORCE_BUILD=TRUE \
+#     python -m pip install causal-conv1d --no-build-isolation --no-cache-dir
 
 # Keep torch/triton/transformers and CQ dependencies under CQ's control.
 python -m pip install flash-linear-attention --no-deps

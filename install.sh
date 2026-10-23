@@ -72,7 +72,7 @@ python -m pip install "transformers==5.17.0"
 python -m pip install \
     "peft>=0.20,<0.22" \
     "accelerate==1.10.1" \
-    "datasets==4.1.1"
+    "datasets>=4.7.0,<5"
 
 echo "[4/6] Installing CQ-compatible training acceleration..."
 # Build CUDA extensions against the PyTorch already installed by CQ inference.
@@ -153,7 +153,13 @@ python -m pip install "unsloth-zoo==2026.10.7" --no-deps
 
 # Install Zoo's declared auxiliary dependencies without allowing their resolver
 # to replace CQ's CUDA-enabled torch/triton or pinned Transformers stack.
-python -m pip install --no-deps cut-cross-entropy torchao trl tyro
+python -m pip install --no-deps \
+    "cut-cross-entropy==25.1.1" \
+    "torchao==0.18.0" \
+    "trl==1.15.0" \
+    "tyro==1.0.16"
+# tyro requires typeguard; allow its lightweight Python dependencies.
+python -m pip install "typeguard>=4.0"
 
 # Reassert the supported Transformers version after all dependency installs.
 python -m pip install --no-deps "transformers==5.17.0"

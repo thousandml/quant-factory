@@ -13,13 +13,13 @@ if ! python -c 'import sys; assert sys.version_info[:2] == (3, 12)' ; then
 fi
 
 echo "Fetching ThousandML native libraries..."
-
 if ! command -v git-lfs >/dev/null 2>&1; then
-    echo "ERROR: Git LFS is required."
-    echo "Install it with: sudo apt-get install git-lfs"
-    exit 1
+    echo "Installing Git LFS..."
+    sudo apt-get update
+    sudo apt-get install -y git-lfs
 fi
 
+git lfs install
 git lfs pull
 
 python -m pip install --upgrade pip setuptools wheel
@@ -29,7 +29,6 @@ echo "[1/5] Checking protected binaries..."
 python - <<'PY'
 from pathlib import Path
 import sysconfig
-
 suffix = sysconfig.get_config_var("EXT_SUFFIX")
 required = {
     "Quantization": Path("lib/utils") / f"_cq_core{suffix}",
@@ -49,7 +48,6 @@ for name in training:
     required["Training " + name] = (
         Path("training") / f"{name}{suffix}"
     )
-
 missing = []
 for label, path in required.items():
     if path.is_file():
@@ -67,7 +65,6 @@ PY
 
 echo "[2/5] Installing CQ inference + CUDA support..."
 python -m pip install ./inference
-
 echo "[3/5] Installing shared training dependencies..."
 python -m pip install \
     "peft>=0.20,<0.22" \
@@ -86,7 +83,6 @@ import cq.cq_kernels
 import cq.runtime_ops
 from lib.utils import _cq_core
 from peft import LoraConfig, get_peft_model
-
 print("PyTorch:", torch.__version__)
 print("Transformers:", transformers.__version__)
 print("PEFT:", peft.__version__)

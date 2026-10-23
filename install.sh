@@ -76,32 +76,58 @@ echo "[4/6] Installing CQ-compatible training acceleration..."
 # Avoid a dependency resolver upgrading/replacing the CUDA-enabled torch stack.
 python -m pip install ninja packaging einops
 
-# Select nvcc matching the installed PyTorch CUDA version, including pip CUDA toolkit.
-CUDA_TOOLKIT_ROOT="$(python - <<'PYCUDA'
-import sys, site, subprocess
+# Discover CUDA compiler, including the pip-provided nvidia/cu13 toolkit.
+# A PyTorch CUDA runtime package does not guarantee a matching nvcc exists.
+# If necessary, install ONLY the matching compiler (never replace torch).
+find_matching_cuda_root() {
+python - <<'PYCUDA'
+import os, re, site, subprocess, sys
 from pathlib import Path
 import torch
 want = torch.version.cuda
 if not want:
-    raise SystemExit('CUDA-enabled PyTorch required for CQ CUDA extensions')
-candidates = []
-for root in (Path('/usr/local/cuda'), Path('/usr/local') / ('cuda-' + want)):
-    candidates.append(root)
-for root in site.getsitepackages():
-    candidates.extend(Path(root).glob('nvidia/cu*/'))
-for root in candidates:
-    nvcc = root / 'bin/nvcc'
+    sys.exit('ERROR: CUDA-enabled PyTorch required')
+major_minor = tuple(map(int, want.split('.')[:2]))
+roots = []
+for env in ('CUDA_HOME', 'CUDA_PATH'):
+    if os.environ.get(env):
+        roots.append(Path(os.environ[env]))
+roots += [Path('/usr/local') / ('cuda-' + want), Path('/usr/local/cuda')]
+for root in site.getsitepackages() + [site.getusersitepackages()]:
+    roots.extend(Path(root).glob('nvidia/cu*/'))
+seen = set()
+for root in roots:
+    if str(root) in seen:
+        continue
+    seen.add(str(root))
+    nvcc = root / 'bin' / 'nvcc'
     if not nvcc.is_file():
         continue
-    out = subprocess.run([str(nvcc), '--version'], capture_output=True, text=True)
-    if out.returncode == 0 and ('release ' + want + ',') in out.stdout:
+    try:
+        proc = subprocess.run([str(nvcc), '--version'], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        continue
+    match = re.search(r'release\s+(\d+)\.(\d+)', proc.stdout + proc.stderr)
+    if proc.returncode == 0 and match and tuple(map(int, match.groups())) == major_minor:
         print(root)
-        break
-else:
-    raise SystemExit(f'ERROR: no nvcc matching PyTorch CUDA {want}. '
-                     'Install the matching CUDA compiler; do not use CUDA 12.8 with cu130.')
+        sys.exit(0)
+sys.exit(1)
 PYCUDA
-)"
+}
+
+if ! CUDA_TOOLKIT_ROOT="$(find_matching_cuda_root)"; then
+    TORCH_CUDA_VERSION="$(python -c 'import torch; print(torch.version.cuda)')"
+    echo "No matching nvcc found for PyTorch CUDA $TORCH_CUDA_VERSION."
+    echo "Installing matching CUDA compiler via pip (without modifying PyTorch)..."
+    python -m pip install --no-deps "nvidia-cuda-nvcc==${TORCH_CUDA_VERSION}.*"
+    if ! CUDA_TOOLKIT_ROOT="$(find_matching_cuda_root)"; then
+        echo "ERROR: No working nvcc matching PyTorch CUDA $TORCH_CUDA_VERSION."
+        echo "CUDA candidates:"
+        find /usr/local/cuda* /usr/local/lib/python3.12/dist-packages/nvidia -path '*/bin/nvcc' -print 2>/dev/null || true
+        echo "Check: python -m pip show nvidia-cuda-nvcc"
+        exit 1
+    fi
+fi
 export CUDA_HOME="$CUDA_TOOLKIT_ROOT"
 export PATH="$CUDA_HOME/bin:$PATH"
 export LD_LIBRARY_PATH="$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
@@ -158,7 +184,6 @@ echo "=================================="
 echo "Quantize: ./quantize-model"
 echo "Inference: vllm serve MODEL --quantization cq"
 echo "Training: python training/train.py --help"
-echo "CQ-compatible acceleration defaults: Unsloth checkpointing + fused PyTorch AdamW"
-echo "To disable: --checkpointing native --optimizer adamw_torch"
+echo "CQ-compatible acceleration: --checkpointing unsloth --optimizer adamw_torch_fused"
 echo "NOTE: Unsloth fused LoRA, loss, RMSNorm and SwiGLU kernels are NOT wired into CQ training."
 echo "      Installing a package alone cannot enable these kernels."

@@ -145,7 +145,7 @@ echo "Using CUDA toolkit: $CUDA_HOME"
 
 # Keep torch/triton/transformers and CQ dependencies under CQ's control.
 python -m pip install flash-linear-attention --no-deps
-python -m pip install unsloth
+python -m pip install unsloth --no-deps
 
 # Unsloth Zoo provides optional smart gradient checkpointing. Full Unsloth
 # model patching is NOT enabled: it can replace CQ quantized projections.

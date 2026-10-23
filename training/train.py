@@ -38,9 +38,9 @@ def main():
     p.add_argument('--eval-steps', type=int, default=25)
     p.add_argument('--lora-dropout', type=float, default=0.05)
     p.add_argument('--seed', type=int, default=42)
-    p.add_argument('--checkpointing', choices=['native', 'unsloth'], default='native',
-                   help='Unsloth smart checkpointing is opt-in and requires compatible unsloth-zoo')
-    p.add_argument('--optimizer', choices=['adamw_torch', 'adamw_torch_fused'], default='adamw_torch',
+    p.add_argument('--checkpointing', choices=['native', 'unsloth'], default='unsloth',
+                   help='Unsloth smart checkpointing by default; use native to disable')
+    p.add_argument('--optimizer', choices=['adamw_torch', 'adamw_torch_fused'], default='adamw_torch_fused',
                    help='PyTorch AdamW; fused uses CUDA fused optimizer without bitsandbytes')
     p.add_argument('--resume')
     p.add_argument('--trust-remote-code', action='store_true')

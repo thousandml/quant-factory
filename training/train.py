@@ -32,6 +32,11 @@ def main():
     p.add_argument('--learning-rate', type=float, default=2e-4)
     p.add_argument('--benchmark', action='store_true', help='Collect CUDA-synchronized optimizer-step timing and peak memory')
     p.add_argument('--benchmark-warmup-steps', type=int, default=10)
+    p.add_argument('--comparison-logs', action='store_true', help='Log actual consumed tokens, throughput and loss history')
+    p.add_argument('--eval-data', help='Held-out JSONL data; same schema as training data')
+    p.add_argument('--eval-steps', type=int, default=25)
+    p.add_argument('--lora-dropout', type=float, default=0.05)
+    p.add_argument('--seed', type=int, default=42)
     p.add_argument('--resume')
     p.add_argument('--trust-remote-code', action='store_true')
     a = p.parse_args()
@@ -41,6 +46,8 @@ def main():
         raise RuntimeError('This initial bridge supports one GPU only')
     if a.benchmark_warmup_steps < 0:
         raise ValueError('benchmark-warmup-steps must be nonnegative')
+    if not 0 <= a.lora_dropout < 1 or a.eval_steps < 1:
+        raise ValueError('lora-dropout must be in [0,1) and eval-steps >= 1')
     if a.max_length < 2 or a.rank < 1:
         raise ValueError('max-length >= 2 and rank >= 1 required')
     from inspect_checkpoint import inspect
@@ -53,7 +60,7 @@ def main():
     if not matched:
         raise ValueError('No target linears matched')
     config = LoraConfig(task_type='CAUSAL_LM', r=a.rank, lora_alpha=a.alpha,
-                        lora_dropout=0.05, target_modules=matched, bias='none',
+                        lora_dropout=a.lora_dropout, target_modules=matched, bias='none',
                         base_model_name_or_path=str(Path(a.model).resolve()))
     load_report = model._cq_load_report
     model = get_peft_model(model, config)
@@ -151,6 +158,14 @@ def main():
             labels[batch['attention_mask'] == 0] = -100
             batch['labels'] = labels
             return batch
+    eval_dataset = None
+    if a.eval_data:
+        eval_dataset = load_dataset('json', data_files=a.eval_data, split='train')
+        if processor is None:
+            eval_dataset = eval_dataset.map(tokenize, remove_columns=eval_dataset.column_names)
+            eval_dataset = eval_dataset.filter(lambda row: len(row['input_ids']) >= 2)
+        if not len(eval_dataset):
+            raise ValueError('No usable evaluation examples')
     if a.benchmark:
         from benchmark import TokenCountingCollator
         collate = TokenCountingCollator(collate)
@@ -159,10 +174,30 @@ def main():
         max_steps=a.max_steps, learning_rate=a.learning_rate, fp16=False, bf16=torch.cuda.is_bf16_supported(),
         gradient_checkpointing=True, gradient_checkpointing_kwargs={'use_reentrant': False},
         optim='adamw_torch', logging_steps=1, save_steps=100, save_total_limit=2,
-        report_to='none', remove_unused_columns=False, seed=42,
+        report_to='none', remove_unused_columns=False, seed=a.seed,
+        eval_strategy='steps' if a.eval_data else 'no', eval_steps=a.eval_steps if a.eval_data else None,
         max_grad_norm=1.0)
-    trainer = Trainer(model=model, args=args, train_dataset=dataset,
-                      data_collator=collate, processing_class=processor or tokenizer)
+    if a.comparison_logs:
+        from comparison_metrics import CountedTrainer, ComparisonMetricsCallback
+        trainer_class = CountedTrainer
+    else:
+        trainer_class = Trainer
+    trainer = trainer_class(model=model, args=args, train_dataset=dataset, eval_dataset=eval_dataset,
+                            data_collator=collate, processing_class=processor or tokenizer)
+    if a.comparison_logs:
+        comparison = ComparisonMetricsCallback(a.output, {
+            'model': a.model, 'train_data': a.data, 'eval_data': a.eval_data,
+            'quantization': 'CQ 4bit', 'targets': targets, 'rank': a.rank,
+            'alpha': a.alpha, 'lora_dropout': a.lora_dropout,
+            'batch_size': a.batch_size, 'grad_accum': a.grad_accum,
+            'max_length': a.max_length, 'max_steps': a.max_steps,
+            'learning_rate': a.learning_rate, 'seed': a.seed,
+            'gradient_checkpointing': True, 'optimizer': 'adamw_torch',
+            'train_examples': len(dataset),
+            'eval_examples': len(eval_dataset) if eval_dataset is not None else None,
+        }, warmup_steps=a.benchmark_warmup_steps)
+        comparison.trainer_ref = trainer
+        trainer.add_callback(comparison)
     if a.benchmark:
         from benchmark import BenchmarkCallback
         trainer.add_callback(BenchmarkCallback(

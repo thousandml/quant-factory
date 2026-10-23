@@ -145,7 +145,9 @@ echo "Using CUDA toolkit: $CUDA_HOME"
 
 # Keep torch/triton/transformers and CQ dependencies under CQ's control.
 python -m pip install flash-linear-attention --no-deps
-python -m pip install unsloth
+# Unsloth Zoo requires the parent `unsloth` package to be imported first.
+# Install without resolving dependencies to protect CQ's torch/CUDA stack.
+python -m pip install unsloth --no-deps
 
 # Unsloth Zoo provides optional smart gradient checkpointing. Full Unsloth
 # model patching is NOT enabled: it can replace CQ quantized projections.
@@ -178,6 +180,10 @@ import peft
 import cq.cq_kernels
 import cq.runtime_ops
 import fla
+# Import the parent package first: Zoo deliberately rejects standalone imports.
+# Do not call FastLanguageModel.from_pretrained or apply Unsloth model patches;
+# CQ remains responsible for its own quantized projection modules.
+import unsloth
 import unsloth_zoo.gradient_checkpointing as gc
 assert callable(getattr(gc, 'patch_unsloth_smart_gradient_checkpointing', None)), (
     'Installed unsloth-zoo lacks the checkpointing API expected by training/unsloth_compat.py'
@@ -191,7 +197,7 @@ print("CUDA available:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("GPU:", torch.cuda.get_device_name(0))
 print("flash-linear-attention (fla) import: OK")
-print("Unsloth Zoo checkpointing API: OK")
+print("Unsloth + Zoo checkpointing API: OK")
 print("ThousandML CQ imports: OK")
 PY
 

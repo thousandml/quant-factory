@@ -66,6 +66,9 @@ echo "[2/6] Installing CQ inference + CUDA support..."
 python -m pip install ./inference
 
 echo "[3/6] Installing shared training dependencies..."
+# Latest Transformers release allowed by unsloth-zoo 2026.10.7.
+# Pin explicitly so inference/PEFT resolution cannot retain 5.20.2.
+python -m pip install "transformers==5.17.0"
 python -m pip install \
     "peft>=0.20,<0.22" \
     "accelerate==1.10.1" \
@@ -146,7 +149,14 @@ python -m pip install flash-linear-attention --no-deps
 # Unsloth Zoo provides optional smart gradient checkpointing. Full Unsloth
 # model patching is NOT enabled: it can replace CQ quantized projections.
 # Do not allow the resolver to replace the CUDA 13 PyTorch stack.
-python -m pip install unsloth-zoo --no-deps
+python -m pip install "unsloth-zoo==2026.10.7" --no-deps
+
+# Install Zoo's declared auxiliary dependencies without allowing their resolver
+# to replace CQ's CUDA-enabled torch/triton or pinned Transformers stack.
+python -m pip install --no-deps cut-cross-entropy torchao trl tyro
+
+# Reassert the supported Transformers version after all dependency installs.
+python -m pip install --no-deps "transformers==5.17.0"
 
 echo "[5/6] Checking dependency consistency..."
 python -m pip check
@@ -155,6 +165,8 @@ echo "[6/6] Running installation checks..."
 python - <<'PY'
 import torch
 import transformers
+from packaging.version import Version
+assert Version(transformers.__version__) == Version("5.17.0"), transformers.__version__
 import peft
 import cq.cq_kernels
 import cq.runtime_ops

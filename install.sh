@@ -176,7 +176,6 @@ assert Version(transformers.__version__) == Version("5.17.0"), transformers.__ve
 import peft
 import cq.cq_kernels
 import cq.runtime_ops
-import causal_conv1d
 import fla
 import unsloth_zoo.gradient_checkpointing as gc
 assert callable(getattr(gc, 'patch_unsloth_smart_gradient_checkpointing', None)), (
@@ -190,7 +189,6 @@ print("PEFT:", peft.__version__)
 print("CUDA available:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("GPU:", torch.cuda.get_device_name(0))
-print("causal_conv1d import: OK")
 print("flash-linear-attention (fla) import: OK")
 print("Unsloth Zoo checkpointing API: OK")
 print("ThousandML CQ imports: OK")

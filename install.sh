@@ -71,6 +71,8 @@ python -m pip install \
     "accelerate==1.10.1" \
     "datasets==4.1.1"
 
+python -m  pip install --ignore-installed PyJWT
+
 echo "[4/5] Checking dependency consistency..."
 python -m pip check
 

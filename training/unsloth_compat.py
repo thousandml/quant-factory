@@ -12,6 +12,7 @@ def configure_checkpointing(mode):
     if mode != "unsloth":
         raise ValueError(f"Unknown checkpointing mode: {mode}")
     try:
+        import unsloth
         module = importlib.import_module("unsloth_zoo.gradient_checkpointing")
     except (ImportError, OSError) as exc:
         raise RuntimeError(

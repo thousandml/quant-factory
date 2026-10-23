@@ -8,6 +8,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoTokenizer, AutoProcessor, Trainer, TrainingArguments
 from load_model import load_model
 from gradient_safety import prepare_trainable_lora, install_nonfinite_gradient_guards
+from unsloth_compat import configure_checkpointing, optimizer_name
 
 
 def main():
@@ -37,6 +38,10 @@ def main():
     p.add_argument('--eval-steps', type=int, default=25)
     p.add_argument('--lora-dropout', type=float, default=0.05)
     p.add_argument('--seed', type=int, default=42)
+    p.add_argument('--checkpointing', choices=['native', 'unsloth'], default='native',
+                   help='Unsloth smart checkpointing is opt-in and requires compatible unsloth-zoo')
+    p.add_argument('--optimizer', choices=['adamw_torch', 'adamw_torch_fused'], default='adamw_torch',
+                   help='PyTorch AdamW; fused uses CUDA fused optimizer without bitsandbytes')
     p.add_argument('--resume')
     p.add_argument('--trust-remote-code', action='store_true')
     a = p.parse_args()
@@ -62,6 +67,9 @@ def main():
     config = LoraConfig(task_type='CAUSAL_LM', r=a.rank, lora_alpha=a.alpha,
                         lora_dropout=a.lora_dropout, target_modules=matched, bias='none',
                         base_model_name_or_path=str(Path(a.model).resolve()))
+    # Configure before PEFT wrapping so the model's checkpoint hooks are patched.
+    configure_checkpointing(a.checkpointing)
+    selected_optimizer = optimizer_name(a.optimizer)
     load_report = model._cq_load_report
     model = get_peft_model(model, config)
     model.print_trainable_parameters()
@@ -173,7 +181,7 @@ def main():
         gradient_accumulation_steps=a.grad_accum, num_train_epochs=a.epochs,
         max_steps=a.max_steps, learning_rate=a.learning_rate, fp16=False, bf16=torch.cuda.is_bf16_supported(),
         gradient_checkpointing=True, gradient_checkpointing_kwargs={'use_reentrant': False},
-        optim='adamw_torch', logging_steps=1, save_steps=100, save_total_limit=2,
+        optim=selected_optimizer, logging_steps=1, save_steps=100, save_total_limit=2,
         report_to='none', remove_unused_columns=False, seed=a.seed,
         eval_strategy='steps' if a.eval_data else 'no', eval_steps=a.eval_steps if a.eval_data else None,
         max_grad_norm=1.0)
@@ -192,7 +200,7 @@ def main():
             'batch_size': a.batch_size, 'grad_accum': a.grad_accum,
             'max_length': a.max_length, 'max_steps': a.max_steps,
             'learning_rate': a.learning_rate, 'seed': a.seed,
-            'gradient_checkpointing': True, 'optimizer': 'adamw_torch',
+            'gradient_checkpointing': a.checkpointing, 'optimizer': selected_optimizer,
             'train_examples': len(dataset),
             'eval_examples': len(eval_dataset) if eval_dataset is not None else None,
         }, warmup_steps=a.benchmark_warmup_steps)

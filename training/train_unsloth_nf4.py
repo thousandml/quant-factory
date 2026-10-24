@@ -238,7 +238,7 @@ def main():
         gradient_accumulation_steps=4,
         per_device_eval_batch_size=2,
         max_steps=a.max_steps,
-        learning_rate=2e-4,
+        learning_rate=2e-5,
         lr_scheduler_type='linear',
         warmup_steps=0,
         weight_decay=0.0,
@@ -262,7 +262,7 @@ def main():
                    'train_data': a.train_data, 'eval_data': a.eval_data,
                    'max_length': a.max_length, 'seed': a.seed,
                    'max_steps': a.max_steps, 'batch_size': 2, 'grad_accum': 4,
-                   'learning_rate': 2e-4, 'optimizer': 'adamw_torch',
+                   'learning_rate': 2e-5, 'optimizer': 'adamw_torch',
                    'scheduler': 'linear', 'warmup_steps': 0, 'weight_decay': 0.0,
                    'eval_steps': a.eval_steps, 'save_steps': a.save_steps,
                    'benchmark_warmup_steps': a.benchmark_warmup_steps}, f, indent=2)

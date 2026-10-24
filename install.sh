@@ -62,6 +62,7 @@ if missing:
         "Build and distribute the matching protected customer binaries."
     )
 PY
+python -m  pip install --ignore-installed PyJWT
 
 echo "[2/6] Installing CQ inference + CUDA support..."
 python -m pip install ./inference
@@ -74,7 +75,6 @@ python -m pip install \
     "peft>=0.20,<0.22" \
     "accelerate==1.10.1" \
     "datasets>=4.7.0,<5"
-python -m  pip install --ignore-installed PyJWT
 
 echo "[4/6] Installing CQ-compatible training acceleration..."
 # Build CUDA extensions against the PyTorch already installed by CQ inference.

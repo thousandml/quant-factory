@@ -165,7 +165,7 @@ python -m pip install --no-deps \
     "unsloth-zoo==2026.10.8"
 
 # Install the missing Unsloth dependencies without replacing CQ's stack.
-python -m pip install --no-deps \
+python -m pip install \
     bitsandbytes \
     importlib-metadata \
     diffusers \

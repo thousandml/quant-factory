@@ -14,11 +14,12 @@ fi
 
 echo "Fetching ThousandML native libraries..."
 if ! command -v git-lfs >/dev/null 2>&1; then
-    echo "ERROR: Git LFS is required."
-    echo "Install it with: sudo apt-get install git-lfs"
-    exit 1
+    echo "Installing Git LFS..."
+    sudo apt-get update
+    sudo apt-get install -y git-lfs
 fi
 
+git lfs install
 git lfs pull
 
 python -m pip install --upgrade pip setuptools wheel

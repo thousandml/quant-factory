@@ -23,6 +23,7 @@ git lfs install
 git lfs pull
 
 python -m pip install --upgrade pip setuptools wheel
+python -m  pip install --ignore-installed PyJWT
 
 echo "[1/6] Checking protected binaries..."
 
@@ -62,7 +63,6 @@ if missing:
         "Build and distribute the matching protected customer binaries."
     )
 PY
-python -m  pip install --ignore-installed PyJWT
 
 echo "[2/6] Installing CQ inference + CUDA support..."
 python -m pip install ./inference

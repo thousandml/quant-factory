@@ -158,21 +158,37 @@ python -m pip install "unsloth-zoo==2026.10.7" --no-deps
 
 # Install Zoo's declared auxiliary dependencies without allowing their resolver
 # to replace CQ's CUDA-enabled torch/triton or pinned Transformers stack.
+
+# Keep CQ's PyTorch, CUDA, Triton and Transformers installations intact.
+python -m pip install --no-deps \
+    "unsloth==2026.10.8" \
+    "unsloth-zoo==2026.10.8"
+
+# Install the missing Unsloth dependencies without replacing CQ's stack.
+python -m pip install --no-deps \
+    bitsandbytes \
+    diffusers \
+    nest-asyncio \
+    structlog \
+    xformers \
+    "certifi>=2026.10.19"
+
+# Keep your existing auxiliary packages.
 python -m pip install --no-deps \
     "cut-cross-entropy==25.1.1" \
     "torchao==0.18.0" \
     "trl==1.15.0" \
     "tyro==1.0.16"
-# tyro requires typeguard; allow its lightweight Python dependencies.
+
 python -m pip install "typeguard>=4.0"
 
-# Reassert the supported Transformers version after all dependency installs.
+# Reassert the CQ-compatible Transformers version.
 python -m pip install --no-deps "transformers==5.17.0"
+
 python -m pip install --no-deps fla-core
 
 echo "[5/6] Checking dependency consistency..."
 python -m pip check
-pip install unsloth datasets trl accelerate bitsandbytes  
 
 echo "[6/6] Running installation checks..."
 python - <<'PY'

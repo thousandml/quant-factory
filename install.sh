@@ -167,6 +167,7 @@ python -m pip install --no-deps \
 # Install the missing Unsloth dependencies without replacing CQ's stack.
 python -m pip install --no-deps \
     bitsandbytes \
+    importlib-metadata \
     diffusers \
     nest-asyncio \
     structlog \

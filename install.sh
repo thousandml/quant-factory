@@ -172,6 +172,7 @@ python -m pip install --no-deps fla-core
 
 echo "[5/6] Checking dependency consistency..."
 python -m pip check
+pip install unsloth datasets trl accelerate bitsandbytes  
 
 echo "[6/6] Running installation checks..."
 python - <<'PY'
